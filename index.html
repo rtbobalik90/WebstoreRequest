@@ -220,6 +220,8 @@
   .prev .ph{font-size:10px;color:rgba(255,255,255,.9);text-shadow:0 1px 2px rgba(0,0,0,.55)}
   .li-fields{flex:1;min-width:0}
   .li-row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:8px}
+  .li-row .fld{flex:1 1 150px;min-width:140px;max-width:240px}
+  .li-row .fld.xs{flex:0 0 72px;min-width:64px;max-width:84px}
   .li-row .xbtn{height:38px;width:38px;flex:none}
   .prod-img{width:120px;height:120px;border:1.5px dashed var(--line);border-radius:10px;display:grid;place-items:center;cursor:pointer;background:#FCFBF8;flex:none;overflow:hidden;text-align:center}
   .prod-img:hover{border-color:var(--accent)}
@@ -397,7 +399,7 @@ function mintCS(){
 }
 
 /* ============================== STATE ============================== */
-const BUILD='v0.18 — batch + deco pricing engine';
+const BUILD='v0.20 — reads full color list from page source';
 let P=null;          // current project
 let STEP=0;
 const STEPS=[
@@ -976,13 +978,13 @@ async function pullProduct(it,i){
     try{
       const og=html.match(/<meta[^>]+(?:property|name)=["']og:image["'][^>]*content=["']([^"']+)["']/i)||html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']og:image["']/i);
       if(og&&/^https?:\/\//i.test(og[1]))it.imageUrl=og[1];
-      const clean=html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<!--[\s\S]*?-->/g,' ').replace(/<svg[\s\S]*?<\/svg>/gi,' ').slice(0,100000);
+      const clean=html.replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<!--[\s\S]*?-->/g,' ').replace(/<svg[\s\S]*?<\/svg>/gi,' ').replace(/<script[^>]*src=[^>]*><\/script>/gi,' ').slice(0,160000);
       const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,
         body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,
           messages:[{role:"user",content:
             `Below is the HTML of a Triple Crown Products product page (${it.url}). Extract the product info from this HTML only.\n`+
             `Return ONLY a raw JSON object, no markdown: {"sku","name","description" (max 200 chars),"colors","imageUrl","priceBreaks","sizeUpcharges"}.\n`+
-            `"colors" must be ONLY the exact color option names actually present in this page's color selector/swatches — do NOT guess, infer, or add common colors. If you can't find a colors list, return "colors": [].\n`+
+            `"colors" must include EVERY color option this product offers — check the color selector/swatches AND any embedded product data (JS variables, JSON, data-* attributes). Some pages display only a few swatches with a "Show all" button but list the full set in the page source; include all of them. Do NOT invent or add colors that aren't in the source. If you can't find a colors list, return "colors": [].\n`+
             `"priceBreaks" = the garment's quantity price table as an array like [{"min":1,"max":5,"price":8.97},{"min":6,"max":11,"price":7.87},{"min":144,"max":null,"price":5.24}]. Use null for an open-ended top break.\n`+
             `"sizeUpcharges" = extended-size upcharges as an array like [{"size":"2XL","amount":2.00},{"size":"3XL","amount":3.00}]. Empty array if none.\n\nHTML:\n`+clean}]})});
       const data=await res.json();
