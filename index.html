@@ -367,7 +367,7 @@ function mintCS(){
 }
 
 /* ============================== STATE ============================== */
-const BUILD='v0.16 — colors + bulk import';
+const BUILD='v0.17 — reads the real product page';
 let P=null;          // current project
 let STEP=0;
 const STEPS=[
@@ -820,48 +820,65 @@ async function pullProduct(it,i){
   const card=document.querySelector(`.item-card[data-i="${i}"]`);
   const msg=card.querySelector('[data-pullmsg]');
   if(!it.url.trim()){msg.innerHTML=`<div class="alert warn">Paste a product link first, or fill the fields manually below.</div>`;return;}
-  msg.innerHTML=`<div class="alert info">Pulling product details…</div>`;
-  try{
-    const key=Store.get('apiKey','');
-    const headers={"Content-Type":"application/json"};
-    if(key){headers["x-api-key"]=key;headers["anthropic-version"]="2023-06-01";headers["anthropic-dangerous-direct-browser-access"]="true";}
-    const prompt=
-      `Find this Triple Crown Products product and extract its details: ${it.url}\n`+
-      `Use web_search to look it up — try the style/SKU number from the URL and the product name.\n`+
-      `Return ONLY a raw JSON object, no markdown, no commentary, with keys: `+
-      `"sku" (string), "name" (string), "description" (string, max 200 chars), `+
-      `"colors" (array of color name strings offered for this product), `+
-      `"imageUrl" (direct URL to the main product image if found, else ""). `+
-      `Fill any field you can; use "" or [] for unknowns. Only return {"error":"not found"} if you cannot identify the product at all.`;
-    const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,
-      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1200,
-        tools:[{type:"web_search_20250305",name:"web_search"}],
-        messages:[{role:"user",content:prompt}]})});
-    const data=await res.json();
-    if(!res.ok||(data&&data.type==='error')){
-      const code=res.status;
-      msg.innerHTML=`<div class="alert warn">${code===401||code===403?'Pull rejected — add a valid API key in <b>Admin → General</b>.':'Pull failed ('+esc((data&&data.error&&data.error.message)||('HTTP '+code))+'). Enter the fields manually below.'}</div>`;
-      return;
-    }
-    const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
-    const json=extractJSON(text);
-    if(!json||json.error){
-      const peek=esc((text||'').replace(/\s+/g,' ').trim().slice(0,170));
-      msg.innerHTML=`<div class="alert warn">Couldn't read this one automatically — fill the fields below.${peek?`<br><span style="font-size:11px;opacity:.75">model said: ${peek}…</span>`:''}</div>`;
-      return;
-    }
+  msg.innerHTML=`<div class="alert info">Reading the product page…</div>`;
+  const key=Store.get('apiKey','');
+  const headers={"Content-Type":"application/json"};
+  if(key){headers["x-api-key"]=key;headers["anthropic-version"]="2023-06-01";headers["anthropic-dangerous-direct-browser-access"]="true";}
+  const setMsg=h=>{const m2=document.querySelector(`.item-card[data-i="${i}"] [data-pullmsg]`);if(m2)m2.innerHTML=h;};
+  const apply=json=>{
+    if(!json||json.error)return false;
     if(json.sku)it.sku=json.sku;
     if(json.name)it.name=json.name;
     if(json.description)it.description=json.description;
-    if(json.imageUrl&&/^https?:\/\//i.test(json.imageUrl))it.imageUrl=json.imageUrl;
-    if(Array.isArray(json.colors)&&json.colors.length){
-      it.pulledColors=[...new Set(json.colors.map(c=>String(c).trim()).filter(Boolean))];
+    if(json.imageUrl&&/^https?:\/\//i.test(json.imageUrl)&&!it.imageData)it.imageUrl=json.imageUrl;
+    if(Array.isArray(json.colors)&&json.colors.length)it.pulledColors=[...new Set(json.colors.map(c=>String(c).trim()).filter(Boolean))];
+    return true;
+  };
+
+  // 1) Read the REAL page HTML through a CORS proxy, then have the model extract from it
+  let html=null;
+  const proxies=['https://api.allorigins.win/raw?url=','https://corsproxy.io/?url='];
+  for(const px of proxies){try{const r=await fetch(px+encodeURIComponent(it.url));if(r.ok){const t=await r.text();if(t&&t.length>800){html=t;break;}}}catch(e){}}
+  if(html){
+    try{
+      const og=html.match(/<meta[^>]+(?:property|name)=["']og:image["'][^>]*content=["']([^"']+)["']/i)||html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']og:image["']/i);
+      if(og&&/^https?:\/\//i.test(og[1]))it.imageUrl=og[1];
+      const clean=html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<!--[\s\S]*?-->/g,' ').replace(/<svg[\s\S]*?<\/svg>/gi,' ').slice(0,100000);
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,
+        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,
+          messages:[{role:"user",content:
+            `Below is the HTML of a Triple Crown Products product page (${it.url}). Extract the product info from this HTML only.\n`+
+            `Return ONLY a raw JSON object, no markdown: {"sku","name","description" (max 200 chars),"colors","imageUrl"}.\n`+
+            `"colors" must be ONLY the exact color option names actually present in this page's color selector/swatches — do NOT guess, infer, or add common colors. If you can't find a colors list, return "colors": [].\n\nHTML:\n`+clean}]})});
+      const data=await res.json();
+      if(res.ok&&!(data&&data.type==='error')){
+        const json=extractJSON((data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n'));
+        if(apply(json)){refresh();renderStep();setMsg(`<div class="alert good">Read straight from the page ✓ — confirm details and check the colors you want.</div>`);return;}
+      }else if(data&&data.type==='error'&&/authentication|api key|x-api-key/i.test(JSON.stringify(data.error||''))){
+        setMsg(`<div class="alert warn">Add a valid API key in <b>Admin → General</b>.</div>`);return;
+      }
+    }catch(e){}
+  }
+
+  // 2) Fallback: web search (less reliable for exact colors)
+  try{
+    const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1200,
+        tools:[{type:"web_search_20250305",name:"web_search"}],
+        messages:[{role:"user",content:
+          `Find this Triple Crown Products product and extract its details: ${it.url}\n`+
+          `Return ONLY raw JSON: {"sku","name","description" (max 200 chars),"colors" (array of color names),"imageUrl"}. `+
+          `Fill what you can; use "" or [] for unknowns. Only return {"error":"not found"} if you cannot identify the product at all.`}]})});
+    const data=await res.json();
+    if(!res.ok||(data&&data.type==='error')){
+      const code=res.status;
+      msg.innerHTML=`<div class="alert warn">${code===401||code===403?'Pull rejected — add a valid API key in <b>Admin → General</b>.':'Pull failed ('+esc((data&&data.error&&data.error.message)||('HTTP '+code))+'). Enter the fields manually below.'}</div>`;return;
     }
-    refresh();renderStep();
-    const m2=document.querySelector(`.item-card[data-i="${i}"] [data-pullmsg]`);
-    if(m2)m2.innerHTML=`<div class="alert good">Pulled ✓ — confirm the details and check off the colors you want.</div>`;
+    const json=extractJSON((data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n'));
+    if(apply(json)){refresh();renderStep();setMsg(`<div class="alert warn">Couldn't open the page directly, so this came from web search — <b>double-check the colors</b>, search can miss or invent some.</div>`);return;}
+    msg.innerHTML=`<div class="alert warn">Couldn't read this product automatically — fill the fields below and add colors by hand.</div>`;
   }catch(e){
-    msg.innerHTML=`<div class="alert warn">Pull failed (${esc(e.message||'network')}). You can still enter everything manually.</div>`;
+    msg.innerHTML=`<div class="alert warn">Pull failed (${esc(e.message||'network')}). Enter everything manually below.</div>`;
   }
 }
 function extractJSON(t){if(!t)return null;t=t.replace(/```json/gi,'').replace(/```/g,'');const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a<0||b<0)return null;try{return JSON.parse(t.slice(a,b+1))}catch(e){return null}}
