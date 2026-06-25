@@ -804,21 +804,19 @@ async function pullProduct(it,i){
     const key=Store.get('apiKey','');
     const headers={"Content-Type":"application/json"};
     if(key){headers["x-api-key"]=key;headers["anthropic-version"]="2023-06-01";headers["anthropic-dangerous-direct-browser-access"]="true";}
-    headers["anthropic-beta"]="web-fetch-2025-09-10";
     const prompt=
-      `Get the product details from this Triple Crown Products page: ${it.url}\n`+
-      `First try web_fetch to open that exact URL and read the page HTML (including the <meta property="og:image"> tag for the main image). If web_fetch is unavailable or fails, use web_search to find the product instead.\n`+
+      `Find this Triple Crown Products product and extract its details: ${it.url}\n`+
+      `Use web_search to look it up — try the style/SKU number from the URL and the product name.\n`+
       `Return ONLY a raw JSON object, no markdown, no commentary, with keys: `+
       `"sku" (string), "name" (string), "description" (string, max 200 chars), `+
       `"colors" (array of color name strings offered for this product), `+
-      `"imageUrl" (the direct URL of the main product image, or ""). `+
-      `Fill any field you can find; use "" or [] for anything you cannot. Only return {"error":"not found"} if you cannot identify the product at all.`;
-    const post=tools=>fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,
-      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1200,tools,messages:[{role:"user",content:prompt}]})});
-    const wf={type:"web_fetch_20250910",name:"web_fetch",max_uses:3};
-    const ws={type:"web_search_20250305",name:"web_search"};
-    let res=await post([wf,ws]); let data=await res.json();
-    if(!res.ok){res=await post([ws]); data=await res.json();}   // retry without web_fetch if unsupported
+      `"imageUrl" (direct URL to the main product image if found, else ""). `+
+      `Fill any field you can; use "" or [] for unknowns. Only return {"error":"not found"} if you cannot identify the product at all.`;
+    const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1200,
+        tools:[{type:"web_search_20250305",name:"web_search"}],
+        messages:[{role:"user",content:prompt}]})});
+    const data=await res.json();
     if(!res.ok||(data&&data.type==='error')){
       const code=res.status;
       msg.innerHTML=`<div class="alert warn">${code===401||code===403?'Pull rejected — add a valid API key in <b>Admin → General</b>.':'Pull failed ('+esc((data&&data.error&&data.error.message)||('HTTP '+code))+'). Enter the fields manually below.'}</div>`;
@@ -826,7 +824,11 @@ async function pullProduct(it,i){
     }
     const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
     const json=extractJSON(text);
-    if(!json||json.error){msg.innerHTML=`<div class="alert warn">Couldn't pull this one automatically. Fill the fields manually below — colors can be added by hand.</div>`;return;}
+    if(!json||json.error){
+      const peek=esc((text||'').replace(/\s+/g,' ').trim().slice(0,170));
+      msg.innerHTML=`<div class="alert warn">Couldn't read this one automatically — fill the fields below.${peek?`<br><span style="font-size:11px;opacity:.75">model said: ${peek}…</span>`:''}</div>`;
+      return;
+    }
     if(json.sku)it.sku=json.sku;
     if(json.name)it.name=json.name;
     if(json.description)it.description=json.description;
