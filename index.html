@@ -254,6 +254,7 @@
   <div class="ttotal" id="topTotal" style="display:none"><span>Setup total</span><b id="topTotalVal">$0.00</b></div>
   <button class="tbtn" id="btnProjects">Projects</button>
   <button class="tbtn" id="btnAdmin">Admin</button>
+  <span id="buildTag" style="font-size:10px;color:#8693a8;margin-left:8px"></span>
 </div>
 
 <!-- LANDING -->
@@ -366,6 +367,7 @@ function mintCS(){
 }
 
 /* ============================== STATE ============================== */
+const BUILD='v0.16 — colors + bulk import';
 let P=null;          // current project
 let STEP=0;
 const STEPS=[
@@ -1250,6 +1252,7 @@ window.addEventListener('unhandledrejection',e=>{try{toast('Error: '+((e.reason&
 
 /* boot — resume the last open request instead of dropping to the landing page */
 (function boot(){
+  const bt=document.getElementById('buildTag');if(bt)bt.textContent=BUILD;
   renderRecent();
   try{
     const cid=Store.get('currentId');
