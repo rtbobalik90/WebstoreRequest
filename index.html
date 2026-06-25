@@ -317,15 +317,37 @@ const DEFAULT_ADMIN={
     {id:'p2',name:'Premium Store',itemLimit:25,baseCost:0},
     {id:'p3',name:'Custom / Enterprise',itemLimit:50,baseCost:0}
   ],
-  /* deco cost is a PLACEHOLDER flat cost per method — swapped for graph logic later */
+  webstoreFee:1.00,
   decoMethods:[
-    {id:'emb',name:'Embroidery',cost:0},
-    {id:'sp',name:'Screen Print',cost:0},
-    {id:'dtg',name:'DTG',cost:0},
-    {id:'ht',name:'Heat Transfer',cost:0},
-    {id:'vinyl',name:'Vinyl',cost:0},
-    {id:'patch',name:'Patch',cost:0}
+    {id:'emb',name:'Embroidery',model:'embroidery'},
+    {id:'sp',name:'Screen Print',model:'screenprint'},
+    {id:'ht',name:'Heat Transfer',model:'httransfer'},
+    {id:'dtf',name:'DTF',model:'httransfer'}
   ],
+  batchSizes:[
+    {id:'1off',label:'1 Off Order',qty:12},
+    {id:'24',label:'24+',qty:24},
+    {id:'48',label:'48+',qty:48},
+    {id:'72',label:'72+',qty:72},
+    {id:'96',label:'96+',qty:96},
+    {id:'144',label:'144+',qty:144}
+  ],
+  pricing:{
+    embroidery:{
+      tierCutSqIn:6, maxSqIn:12, setups:{A:45,B:95},
+      breaks:[{l:'12-23',min:12,max:23},{l:'24-47',min:24,max:47},{l:'48-95',min:48,max:95},{l:'96-143',min:96,max:143},{l:'144-287',min:144,max:287},{l:'288+',min:288,max:null}],
+      rates:{A:[7.95,6.75,5.95,5.75,4.95,4.55], B:[9.95,8.75,7.95,7.75,6.95,6.55]}
+    },
+    screenprint:{
+      breaks:[{l:'12-23',min:12,max:23},{l:'24-47',min:24,max:47},{l:'48-95',min:48,max:95},{l:'96-143',min:96,max:143},{l:'144-299',min:144,max:299},{l:'300-499',min:300,max:499},{l:'500-999',min:500,max:999},{l:'1000+',min:1000,max:null}],
+      rates:{1:[6.20,4.20,3.50,2.80,2.10,1.75,1.50,1.24],2:[null,4.95,4.40,3.45,2.75,1.95,1.68,1.39],3:[null,null,5.00,4.05,3.15,2.15,1.84,1.52],4:[null,null,null,4.65,3.55,2.40,2.01,1.65],5:[null,null,null,null,3.95,2.60,2.18,1.88]}
+    },
+    httransfer:{
+      sizeCutSqIn:20, maxSqIn:100,
+      breaks:[{l:'12-47',min:12,max:47},{l:'48-95',min:48,max:95},{l:'96-143',min:96,max:143},{l:'144+',min:144,max:null}],
+      types:{reflective:{small:[6.00,5.00,4.50,4.25], large:[9.00,7.50,7.00,6.75]}, fullcolor:{small:[7.00,6.00,5.50,5.25], large:[10.00,9.00,8.50,8.25]}}
+    }
+  },
   addons:[
     {id:'a1',name:'Name & number personalization',desc:'Buyers add a name and/or number to garments at checkout.',cost:0},
     {id:'a2',name:'Group / bulk ordering',desc:'Allows team or roster-based bulk purchasing.',cost:0},
@@ -356,7 +378,15 @@ const DEFAULT_ADMIN={
   ],
   cloud:{gistId:'',token:''}
 };
-function admin(){const a=Store.get('admin');return a?Object.assign({},DEFAULT_ADMIN,a):JSON.parse(JSON.stringify(DEFAULT_ADMIN))}
+function admin(){
+  let a=Store.get('admin'); a=a?Object.assign({},DEFAULT_ADMIN,a):JSON.parse(JSON.stringify(DEFAULT_ADMIN));
+  if(!a.pricing)a.pricing=JSON.parse(JSON.stringify(DEFAULT_ADMIN.pricing));
+  if(!a.batchSizes)a.batchSizes=JSON.parse(JSON.stringify(DEFAULT_ADMIN.batchSizes));
+  if(a.webstoreFee==null)a.webstoreFee=DEFAULT_ADMIN.webstoreFee;
+  if(!a.decoMethods||!a.decoMethods[0]||a.decoMethods[0].model===undefined)a.decoMethods=JSON.parse(JSON.stringify(DEFAULT_ADMIN.decoMethods));
+  if(!a.colors)a.colors=JSON.parse(JSON.stringify(DEFAULT_ADMIN.colors));
+  return a;
+}
 function saveAdmin(a){Store.set('admin',a)}
 if(!Store.get('admin'))saveAdmin(DEFAULT_ADMIN);
 
@@ -367,7 +397,7 @@ function mintCS(){
 }
 
 /* ============================== STATE ============================== */
-const BUILD='v0.17 — reads the real product page';
+const BUILD='v0.18 — batch + deco pricing engine';
 let P=null;          // current project
 let STEP=0;
 const STEPS=[
@@ -385,6 +415,7 @@ function blankProject(){
     status:'draft', createdAt:Date.now(), updatedAt:Date.now(),
     request:{packageId:'', storeType:'', storeName:'', repName:'', repEmail:'',
              companyName:'', contactName:'', contactEmail:'', contactPhone:'',
+             batchOn:false, batchSizeId:'1off',
              launchDate:'', notes:''},
     items:[],
     logos:{},          // decoMethodId -> [logo defs]
@@ -396,13 +427,12 @@ function blankProject(){
 }
 function newItem(){
   return {id:'I'+Math.random().toString(36).slice(2,8), url:'', sku:'', name:'', description:'',
-          imageUrl:'', imageData:null,
+          imageUrl:'', imageData:null, priceBreaks:[], sizeUpcharges:[],
           pulledColors:[], colors:[], inventoried:false, csNumber:''};
 }
 const lid=()=>'L'+Math.random().toString(36).slice(2,8);
-// color object: {name, hex, tone:'auto'|'light'|'dark', logos:[logoInstance]}
-// logoInstance: {id, deco, logoId, coid, placement, w, h, image}
-// project logo def: {id, image, coid, w, h, placement, colorway:{type:'light'|'dark'|'color', color}}
+// logoInstance: {id, deco, logoId, coid, placement, w, h, image, spColors, htType}
+// logo def: {id, name, image, coid, w, h, placement, spColors, htType, colorway:{type,color}}
 
 /* ============================== PERSISTENCE ============================== */
 function projects(){return Store.get('projects',{})}
@@ -421,17 +451,23 @@ function deleteProject(id){const all=projects();delete all[id];Store.set('projec
 function migrate(p){
   if(!p.logos)p.logos={};
   if(!p.defaultDeco)p.defaultDeco=(admin().decoMethods[0]||{}).id||'emb';
+  if(p.request&&p.request.batchOn===undefined){p.request.batchOn=false;p.request.batchSizeId='1off';}
   Object.keys(p.logos).forEach(k=>{(p.logos[k]||[]).forEach(lg=>{
     if(lg.name===undefined)lg.name='';
+    if(lg.spColors===undefined)lg.spColors=1;
+    if(lg.htType===undefined)lg.htType='reflective';
     if(!lg.colorway)lg.colorway={type:'light',color:''};
   });});
   (p.items||[]).forEach(it=>{
     if(it.imageUrl===undefined)it.imageUrl='';
     if(it.imageData===undefined)it.imageData=null;
+    if(!it.priceBreaks)it.priceBreaks=[];
+    if(!it.sizeUpcharges)it.sizeUpcharges=[];
     (it.colors||[]).forEach(c=>{
       if(c.tone===undefined)c.tone='auto';
       c.logos=(c.logos||[]).map(l=>({id:l.id||lid(),deco:l.deco||p.defaultDeco,logoId:l.logoId||'',
-        coid:l.coid||'',placement:l.placement||'',w:l.w||'',h:l.h||'',image:l.image||null}));
+        coid:l.coid||'',placement:l.placement||'',w:l.w||'',h:l.h||'',image:l.image||null,
+        spColors:l.spColors||1,htType:l.htType||'reflective'}));
     });
   });
   return p;
@@ -450,8 +486,8 @@ function resolveLogo(decoId,c){
   return m||pool[0];
 }
 function instanceFromDef(def,decoId){
-  if(!def)return {id:lid(),deco:decoId||P.defaultDeco||'',logoId:'',coid:'',placement:'',w:'',h:'',image:null};
-  return {id:lid(),deco:decoId,logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image};
+  if(!def)return {id:lid(),deco:decoId||P.defaultDeco||'',logoId:'',coid:'',placement:'',w:'',h:'',image:null,spColors:1,htType:'reflective'};
+  return {id:lid(),deco:decoId,logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image,spColors:def.spColors||1,htType:def.htType||'reflective'};
 }
 function removeBg(dataURL,cb,tol=64){const img=new Image();img.onload=()=>{
   const cv=document.createElement('canvas');cv.width=img.width;cv.height=img.height;const x=cv.getContext('2d');
@@ -465,15 +501,63 @@ function removeBg(dataURL,cb,tol=64){const img=new Image();img.onload=()=>{
   x.putImageData(d,0,0);cb(cv.toDataURL('image/png'));};img.onerror=()=>cb(dataURL);img.src=dataURL;}
 
 /* ============================== PRICING ============================== */
-function decoCost(decoId){const m=admin().decoMethods.find(d=>d.id===decoId);return m?(+m.cost||0):0}
+function batchQty(){
+  if(!P.request.batchOn)return 12;
+  const b=(admin().batchSizes||[]).find(x=>x.id===P.request.batchSizeId);
+  return b?(+b.qty||12):12;
+}
+function batchLabel(){if(!P.request.batchOn)return '1-off';const b=(admin().batchSizes||[]).find(x=>x.id===P.request.batchSizeId);return b?b.label:'1-off';}
+function pickBreakIdx(breaks,qty){for(let i=0;i<breaks.length;i++){const b=breaks[i];if(qty>=b.min&&(b.max==null||qty<=b.max))return i;}return qty<breaks[0].min?0:breaks.length-1;}
+function decoModelOf(decoId){const m=(admin().decoMethods||[]).find(d=>d.id===decoId);return m?m.model:null;}
+function logoArea(l){return (parseFloat(l.w)||0)*(parseFloat(l.h)||0);}
+/* returns {price} OR {price:null,note} (incomplete) OR {blocked:true,reason} */
+function logoDecoPrice(l){
+  const A=admin(), q=batchQty(), model=decoModelOf(l.deco), pr=A.pricing||{};
+  if(!l.deco)return {price:null,note:'pick a deco method'};
+  if(model==='embroidery'){
+    const E=pr.embroidery, area=logoArea(l);
+    if(area<=0)return {price:null,note:'enter logo size'};
+    if(area>E.maxSqIn)return {blocked:true,reason:`${area.toFixed(1)} sq in is over the ${E.maxSqIn} sq in embroidery max — needs a custom quote.`};
+    const tier=area<=E.tierCutSqIn?'A':'B', idx=pickBreakIdx(E.breaks,q), price=E.rates[tier][idx];
+    return price==null?{blocked:true,reason:'no embroidery price at this break'}:{price:+price,detail:`Emb ${tier} @ ${E.breaks[idx].l}`};
+  }
+  if(model==='screenprint'){
+    const S=pr.screenprint, colors=Math.max(1,Math.min(5,parseInt(l.spColors)||1)), idx=pickBreakIdx(S.breaks,q), price=S.rates[colors][idx];
+    if(price==null)return {blocked:true,reason:`${colors}-color screen print isn't offered at the ${S.breaks[idx].l} break — raise the batch size or reduce colors.`};
+    return {price:+price,detail:`SP ${colors}c @ ${S.breaks[idx].l}`};
+  }
+  if(model==='httransfer'){
+    const H=pr.httransfer, area=logoArea(l);
+    if(area<=0)return {price:null,note:'enter logo size'};
+    if(area>H.maxSqIn)return {blocked:true,reason:`${area.toFixed(1)} sq in is over the ${H.maxSqIn} sq in transfer max.`};
+    const sz=area<=H.sizeCutSqIn?'small':'large', type=(l.htType==='fullcolor')?'fullcolor':'reflective', idx=pickBreakIdx(H.breaks,q), price=H.types[type][sz][idx];
+    return price==null?{blocked:true,reason:'no transfer price at this break'}:{price:+price,detail:`${type==='fullcolor'?'Full color':'Reflective'} ${sz==='small'?'≤20':'≤100'} @ ${H.breaks[idx].l}`};
+  }
+  return {price:0};
+}
+function garmentPrice(it){
+  const q=batchQty(), pb=it.priceBreaks||[];
+  if(!pb.length)return null;
+  for(const b of pb){if(q>=(+b.min)&&(b.max==null||b.max===''||q<=(+b.max)))return +b.price;}
+  return q<(+pb[0].min)?+pb[0].price:+pb[pb.length-1].price;
+}
+function itemDecoLogos(it){const c=(it.colors||[]).find(c=>c.logos&&c.logos.length);return c?c.logos:[];}
+function itemStorePrice(it){
+  const g=garmentPrice(it), fee=+admin().webstoreFee||0, logos=itemDecoLogos(it);
+  let deco=0; const blocks=[]; let incomplete=(g==null);
+  logos.forEach((l,idx)=>{const r=logoDecoPrice(l);
+    if(r.blocked)blocks.push(`Logo ${idx+1}: ${r.reason}`);
+    else if(r.price==null)incomplete=true;
+    else deco+=r.price;});
+  const total=(g==null?0:g)+deco+fee;
+  return {garment:g,deco,fee,total,blocks,incomplete,logoCount:logos.length};
+}
+/* setup-invoice side: only extra colorways per item */
 function itemBreakdown(it){
-  const A=admin();
-  const selColors=it.colors.length;
-  const extraColors=Math.max(0,selColors-(+A.freeColorsPerItem||3));
+  const A=admin(), selColors=it.colors.length, free=+A.freeColorsPerItem||3;
+  const extraColors=Math.max(0,selColors-free);
   const extraColorCost=extraColors*(+A.extraColorCost||0);
-  let decoTotal=0, logoCount=0;
-  it.colors.forEach(c=>c.logos.forEach(l=>{if(l.deco){decoTotal+=decoCost(l.deco);logoCount++}}));
-  return {selColors,extraColors,extraColorCost,decoTotal,logoCount,total:extraColorCost+decoTotal};
+  return {selColors,extraColors,extraColorCost,total:extraColorCost};
 }
 function packageOf(){return admin().packages.find(p=>p.id===P.request.packageId)}
 function storeTotals(){
@@ -559,6 +643,14 @@ function renderRequest(m){
         <select id="f_type">${optList(A.storeTypes.map(t=>[t,t]),r.storeType,'Select a type…')}</select></div>
     </div>
     <div class="field"><label>Store name <span class="req">*</span></label><input id="f_sname" value="${esc(r.storeName)}" placeholder="e.g. Lincoln HS Booster Store"></div>
+    <div style="border-top:1px solid var(--line2);padding-top:14px;margin-top:4px">
+      <label class="checkbox" style="font-weight:700"><input type="checkbox" id="f_batchon" ${r.batchOn?'checked':''}> Batch webstore</label>
+      <p class="hint" style="margin:6px 0 10px">A batch store orders in set quantities, which sets the price break for garments and decoration. Off = priced at the lowest (1-off) break.</p>
+      <div class="field ${r.batchOn?'':'hidden'}" id="batchWrap" style="max-width:240px;margin:0">
+        <label>Batch size</label>
+        <select id="f_batchsize">${optList(A.batchSizes.map(b=>[b.id,b.label]),r.batchSizeId)}</select>
+      </div>
+    </div>
   </div>
   <div class="card">
     <h3>Requesting rep</h3>
@@ -583,6 +675,8 @@ function renderRequest(m){
   bind('f_rep','repName'); bind('f_repe','repEmail'); bind('f_co','companyName');
   bind('f_cn','contactName'); bind('f_ce','contactEmail'); bind('f_cp','contactPhone');
   bind('f_ld','launchDate'); bind('f_notes','notes');
+  document.getElementById('f_batchon').onchange=e=>{r.batchOn=e.target.checked;document.getElementById('batchWrap').classList.toggle('hidden',!r.batchOn);refresh()};
+  document.getElementById('f_batchsize').onchange=e=>{r.batchSizeId=e.target.value;refresh()};
   updatePkgNote();
   function updatePkgNote(){const p=A.packages.find(x=>x.id===r.packageId);
     document.getElementById('pkgNote').textContent=p?`Item limit ${p.itemLimit} · ${A.freeColorsPerItem} colors free per item · base ${money(p.baseCost)}`:'';}
@@ -627,11 +721,26 @@ function decoSectionHTML(d){
       <h3 style="margin:0">${esc(d.name)}</h3>
       <span class="muted" style="font-size:12px">${list.length} logo${list.length!==1?'s':''}</span>
       <button class="btn sm iconplus" data-act="addlogo" style="margin-left:auto">+ Add logo</button></div>
-    <div class="logo-defs">${list.length?list.map((lg,li)=>logoDefHTML(lg,li)).join(''):'<p class="muted" style="font-size:13px;margin:6px 0 0">No logos yet for this method.</p>'}</div>
+    <div class="logo-defs">${list.length?list.map((lg,li)=>logoDefHTML(lg,li,d.model)).join(''):'<p class="muted" style="font-size:13px;margin:6px 0 0">No logos yet for this method.</p>'}</div>
   </div>`;
 }
-function logoDefHTML(lg,li){
-  const A=admin();
+function methodExtraFields(lg,prefix){
+  // prefix 'k' for def (data-k), 'l' for instance (data-l)
+  const model=prefix==='def'?lg._model:decoModelOf(lg.deco);
+  const a=prefix==='def'?'data-k':'data-l';
+  if(model==='screenprint'){
+    return `<div class="fld xs"><label># Colors</label><select ${a}="spColors">${[1,2,3,4,5].map(n=>`<option value="${n}" ${(+lg.spColors||1)===n?'selected':''}>${n}</option>`).join('')}</select></div>`;
+  }
+  if(model==='httransfer'){
+    return `<div class="fld"><label>Transfer type</label><select ${a}="htType">
+      <option value="reflective" ${lg.htType!=='fullcolor'?'selected':''}>Reflective B/S</option>
+      <option value="fullcolor" ${lg.htType==='fullcolor'?'selected':''}>Full color</option></select></div>`;
+  }
+  return '';
+}
+function logoDefHTML(lg,li,model){
+  const A=admin(); lg._model=model;
+  const extra=methodExtraFields(lg,'def');
   return `<div class="logo-def" data-li="${li}">
     <div class="ld-img" data-act="img">${lg.image?`<img src="${lg.image}">`:'<span class="ph">📤 Upload<br>logo</span>'}</div>
     <div class="ld-fields">
@@ -640,6 +749,7 @@ function logoDefHTML(lg,li){
         <div class="fld"><label>COID</label><input data-k="coid" value="${esc(lg.coid)}" placeholder="COID"></div>
         <div class="fld xs"><label>W in</label><input data-k="w" type="number" step="0.25" value="${esc(lg.w)}"></div>
         <div class="fld xs"><label>H in</label><input data-k="h" type="number" step="0.25" value="${esc(lg.h)}"></div>
+        ${extra}
       </div>
       <div class="ld-row">
         <div class="fld"><label>Placement</label><select data-k="placement">${optList(A.placements.map(p=>[p,p]),lg.placement,'Placement…')}</select></div>
@@ -673,13 +783,16 @@ function renderItems(m){
   P.items.forEach((it,i)=>wireItem(it,i));
 }
 function itemCardHTML(it,i){
-  const bd=itemBreakdown(it);
+  const bd=itemBreakdown(it), sp=itemStorePrice(it);
+  const up=it.sizeUpcharges||[];
   return `<div class="item-card" data-i="${i}">
     <div class="item-top">
       <div class="ix">${i+1}</div>
       <div class="meta"><div class="nm">${esc(it.name)||'Untitled item'}</div><div class="sku">${esc(it.sku)||'no SKU'}</div></div>
-      <div style="text-align:right"><div class="item-sub">${money(bd.total)}</div>
-        <button class="btn sm danger" data-act="del">Remove</button></div>
+      <div style="text-align:right">
+        <div class="item-sub">${(sp.garment==null&&sp.deco===0)?'—':money(sp.total)}</div>
+        <div style="font-size:10px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase">store / pc</div>
+        <button class="btn sm danger" data-act="del" style="margin-top:6px">Remove</button></div>
     </div>
     <div class="item-body">
       <div class="pull-row">
@@ -710,9 +823,13 @@ function itemCardHTML(it,i){
       </div>
 
       <div class="breakdown">
-        <div><span>Colors selected (${bd.selColors})</span><span>${bd.extraColors>0?`${bd.extraColors} over free → ${money(bd.extraColorCost)}`:'within free 3'}</span></div>
-        <div><span>Logos / decoration (${bd.logoCount})</span><span>${money(bd.decoTotal)}</span></div>
-        <div class="tot"><span>Item total</span><span>${money(bd.total)}</span></div>
+        <div><span>Garment @ ${esc(batchLabel())}</span><span>${sp.garment==null?'<i>no price pulled</i>':money(sp.garment)}</span></div>
+        <div><span>Logos / decoration (${sp.logoCount})</span><span>${money(sp.deco)}</span></div>
+        <div><span>Webstore fee</span><span>${money(sp.fee)}</span></div>
+        <div class="tot"><span>Store price / pc</span><span>${(sp.garment==null&&sp.deco===0)?'—':money(sp.total)}</span></div>
+        ${sp.blocks.length?`<div class="alert warn" style="margin-top:8px">${sp.blocks.map(esc).join('<br>')}</div>`:''}
+        ${up.length?`<div style="margin-top:8px;font-size:12px;color:var(--ink2)"><b>Size upcharges:</b> ${up.map(u=>`${esc(u.size)} +${money(u.amount)}`).join(' · ')}</div>`:''}
+        <div style="display:flex;justify-content:space-between;margin-top:8px;border-top:1px dashed var(--line2);padding-top:8px"><span>Extra colorways (${bd.selColors} selected)</span><span>${bd.extraColors>0?`${bd.extraColors} over free → ${money(bd.extraColorCost)} setup`:'within free 3'}</span></div>
       </div>
     </div></div>`;
 }
@@ -740,6 +857,11 @@ function colorBlockHTML(it,c){
 function logoInstHTML(it,c,l,li){
   const A=admin(); const gh=hexForColor(c.name);
   const pool=(P.logos&&P.logos[l.deco])||[];
+  const extra=methodExtraFields(l,'inst');
+  const pr=logoDecoPrice(l);
+  const priceTxt=pr.blocked?`<span style="color:var(--danger);font-weight:700">⚠ ${esc(pr.reason)}</span>`
+    :(pr.price==null?`<span class="muted">${esc(pr.note||'')}</span>`
+    :`<b style="color:var(--accent2)">+${money(pr.price)}/pc</b> <span class="muted" style="font-size:11px">${esc(pr.detail||'')}</span>`);
   return `<div class="logo-inst" data-li="${li}">
     <div class="prev" style="background:${gh}">${l.image?`<img src="${esc(l.image)}">`:'<span class="ph">no art</span>'}</div>
     <div class="li-fields">
@@ -755,8 +877,10 @@ function logoInstHTML(it,c,l,li){
         <div class="fld"><label>Placement</label><select data-l="placement">${optList(A.placements.map(p=>[p,p]),l.placement,'Placement…')}</select></div>
         <div class="fld xs"><label>W in</label><input data-l="w" type="number" step="0.25" value="${esc(l.w)}"></div>
         <div class="fld xs"><label>H in</label><input data-l="h" type="number" step="0.25" value="${esc(l.h)}"></div>
+        ${extra}
         <button class="xbtn" data-act="dellogo" title="Remove logo">×</button>
       </div>
+      <div style="font-size:12px;margin-top:2px">${priceTxt}</div>
     </div>
   </div>`;
 }
@@ -792,10 +916,12 @@ function wireItem(it,i){
     cb.querySelectorAll('.logo-inst').forEach(row=>{
       const li=+row.dataset.li, l=c.logos[li]; if(!l)return;
       row.querySelectorAll('[data-l]').forEach(el=>{
-        el.oninput=el.onchange=()=>{const k=el.dataset.l;
-          if(k==='deco'){l.deco=el.value;const def=resolveLogo(el.value,c);if(def)Object.assign(l,{logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image});else l.logoId='';refresh();renderStep();return;}
-          if(k==='logoId'){const def=(P.logos[l.deco]||[]).find(x=>x.id===el.value);if(def)Object.assign(l,{logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image});else Object.assign(l,{logoId:'',coid:'',placement:'',w:'',h:'',image:null});refresh();renderStep();return;}
-          l[k]=el.value;refresh();};
+        const k=el.dataset.l;
+        if(k==='deco'){el.onchange=()=>{l.deco=el.value;const def=resolveLogo(el.value,c);if(def)Object.assign(l,{logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image,spColors:def.spColors||1,htType:def.htType||'reflective'});else l.logoId='';refresh();renderStep();};return;}
+        if(k==='logoId'){el.onchange=()=>{const def=(P.logos[l.deco]||[]).find(x=>x.id===el.value);if(def)Object.assign(l,{logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image,spColors:def.spColors||1,htType:def.htType||'reflective'});else Object.assign(l,{logoId:'',coid:'',placement:'',w:'',h:'',image:null});refresh();renderStep();};return;}
+        if(k==='spColors'||k==='htType'){el.onchange=()=>{l[k]=el.value;refresh();renderStep();};return;}
+        if(k==='w'||k==='h'){el.oninput=()=>{l[k]=el.value;refresh();};el.onchange=()=>{l[k]=el.value;refresh();renderStep();};return;}
+        el.oninput=()=>{l[k]=el.value;refresh();};
       });
       row.querySelector('[data-act="dellogo"]').onclick=()=>{c.logos.splice(li,1);refresh();renderStep()};
     });
@@ -832,6 +958,13 @@ async function pullProduct(it,i){
     if(json.description)it.description=json.description;
     if(json.imageUrl&&/^https?:\/\//i.test(json.imageUrl)&&!it.imageData)it.imageUrl=json.imageUrl;
     if(Array.isArray(json.colors)&&json.colors.length)it.pulledColors=[...new Set(json.colors.map(c=>String(c).trim()).filter(Boolean))];
+    if(Array.isArray(json.priceBreaks)){
+      const pb=json.priceBreaks.map(b=>({min:+b.min||0,max:(b.max==null||b.max===''?null:+b.max),price:+b.price})).filter(b=>b.price>0).sort((a,b)=>a.min-b.min);
+      if(pb.length)it.priceBreaks=pb;
+    }
+    if(Array.isArray(json.sizeUpcharges)){
+      it.sizeUpcharges=json.sizeUpcharges.map(u=>({size:String(u.size||'').trim(),amount:+u.amount||0})).filter(u=>u.size);
+    }
     return true;
   };
 
@@ -848,8 +981,10 @@ async function pullProduct(it,i){
         body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,
           messages:[{role:"user",content:
             `Below is the HTML of a Triple Crown Products product page (${it.url}). Extract the product info from this HTML only.\n`+
-            `Return ONLY a raw JSON object, no markdown: {"sku","name","description" (max 200 chars),"colors","imageUrl"}.\n`+
-            `"colors" must be ONLY the exact color option names actually present in this page's color selector/swatches — do NOT guess, infer, or add common colors. If you can't find a colors list, return "colors": [].\n\nHTML:\n`+clean}]})});
+            `Return ONLY a raw JSON object, no markdown: {"sku","name","description" (max 200 chars),"colors","imageUrl","priceBreaks","sizeUpcharges"}.\n`+
+            `"colors" must be ONLY the exact color option names actually present in this page's color selector/swatches — do NOT guess, infer, or add common colors. If you can't find a colors list, return "colors": [].\n`+
+            `"priceBreaks" = the garment's quantity price table as an array like [{"min":1,"max":5,"price":8.97},{"min":6,"max":11,"price":7.87},{"min":144,"max":null,"price":5.24}]. Use null for an open-ended top break.\n`+
+            `"sizeUpcharges" = extended-size upcharges as an array like [{"size":"2XL","amount":2.00},{"size":"3XL","amount":3.00}]. Empty array if none.\n\nHTML:\n`+clean}]})});
       const data=await res.json();
       if(res.ok&&!(data&&data.type==='error')){
         const json=extractJSON((data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n'));
@@ -867,7 +1002,7 @@ async function pullProduct(it,i){
         tools:[{type:"web_search_20250305",name:"web_search"}],
         messages:[{role:"user",content:
           `Find this Triple Crown Products product and extract its details: ${it.url}\n`+
-          `Return ONLY raw JSON: {"sku","name","description" (max 200 chars),"colors" (array of color names),"imageUrl"}. `+
+          `Return ONLY raw JSON: {"sku","name","description" (max 200 chars),"colors" (array of color names),"imageUrl","priceBreaks" (array of {"min","max","price"}, max null for open break),"sizeUpcharges" (array of {"size","amount"})}. `+
           `Fill what you can; use "" or [] for unknowns. Only return {"error":"not found"} if you cannot identify the product at all.`}]})});
     const data=await res.json();
     if(!res.ok||(data&&data.type==='error')){
@@ -955,7 +1090,7 @@ function renderInvoice(m){
   <div class="card"><h3>Cost summary</h3>
     <div class="breakdown" style="font-size:14px">
       <div><span>${pkg?esc(pkg.name)+' base':'Package base'}</span><span>${money(t.base)}</span></div>
-      <div><span>Items & decoration (${P.items.length})</span><span>${money(t.items)}</span></div>
+      <div><span>Extra colorways (beyond ${admin().freeColorsPerItem} free)</span><span>${money(t.items)}</span></div>
       <div><span>Items over package limit</span><span>${money(t.extraItems)}</span></div>
       <div><span>Add-on features</span><span>${money(t.addons)}</span></div>
       <div class="tot" style="font-size:18px"><span>Setup total</span><span>${money(t.grand)}</span></div>
@@ -989,6 +1124,7 @@ function buildExcel(submit){
     ['TRIPLE CROWN PRODUCTS — WEBSTORE REQUEST'],
     ['Request ID',P.id],['Status',submit?'SUBMITTED':'DRAFT EXPORT'],['Generated',new Date().toLocaleString()],[],
     ['Package',pkg?pkg.name:''],['Item limit',pkg?pkg.itemLimit:''],['Store type',P.request.storeType],
+    ['Batch webstore',P.request.batchOn?'YES':'No'],['Batch size',batchLabel()],
     ['Store name',P.request.storeName],[],
     ['Rep',P.request.repName],['Rep email',P.request.repEmail],
     ['Company',P.request.companyName],['Contact',P.request.contactName],
@@ -997,16 +1133,19 @@ function buildExcel(submit){
   ];
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(req),'Request');
   // Items sheet (flattened by color/logo)
-  const rows=[['Item #','SKU','Item name','Description','Inventoried','CS #','Color','Tone','Logo #','Deco method','COID','Placement','Size (in)','Item total']];
+  const rows=[['Item #','SKU','Item name','Description','Garment $/pc','Store $/pc','Size upcharges','Inventoried','CS #','Color','Tone','Logo #','Deco method','COID','Placement','Size (in)','Logo $/pc']];
   P.items.forEach((it,i)=>{
-    const bd=itemBreakdown(it);
-    if(it.colors.length===0){rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,'','','','','','','',money(bd.total)]);}
+    const sp=itemStorePrice(it);
+    const g=sp.garment==null?'':money(sp.garment), store=money(sp.total);
+    const up=(it.sizeUpcharges||[]).map(u=>`${u.size}+${money(u.amount)}`).join('; ');
+    if(it.colors.length===0){rows.push([i+1,it.sku,it.name,it.description,g,store,up,it.inventoried?'YES':'',it.csNumber,'','','','','','','','']);}
     it.colors.forEach(c=>{
       const tone=colorIsDark(c)?'Dark':'Light';
-      if(c.logos.length===0){rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,c.name,tone,'(none)','','','','',money(bd.total)]);}
+      if(c.logos.length===0){rows.push([i+1,it.sku,it.name,it.description,g,store,up,it.inventoried?'YES':'',it.csNumber,c.name,tone,'(none)','','','','','']);}
       c.logos.forEach((l,li)=>{const dn=(A.decoMethods.find(d=>d.id===l.deco)||{}).name||'';
         const size=(l.w||l.h)?`${l.w||'?'} x ${l.h||'?'}`:'';
-        rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,c.name,tone,li+1,dn,l.coid,l.placement,size,money(bd.total)]);});
+        const lp=logoDecoPrice(l); const lpx=lp.blocked?'BLOCKED':(lp.price==null?'':money(lp.price));
+        rows.push([i+1,it.sku,it.name,it.description,g,store,up,it.inventoried?'YES':'',it.csNumber,c.name,tone,li+1,dn,l.coid,l.placement,size,lpx]);});
     });
   });
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Items');
@@ -1082,7 +1221,7 @@ let ADM_TAB='general';
 function openAdmin(){document.getElementById('pinInput').value='';show('ovPin');setTimeout(()=>document.getElementById('pinInput').focus(),50)}
 function renderAdmin(){
   const A=admin();
-  const tabs=[['general','General'],['colors','Colors'],['packages','Packages'],['deco','Deco methods'],['addons','Add-ons'],['cloud','Cloud sync']];
+  const tabs=[['general','General'],['colors','Colors'],['packages','Packages'],['pricing','Pricing'],['deco','Deco methods'],['addons','Add-ons'],['cloud','Cloud sync']];
   let body=`<div class="adm-tabs">${tabs.map(t=>`<button class="${ADM_TAB===t[0]?'on':''}" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div><div id="admPane"></div>`;
   document.getElementById('adminBody').innerHTML=body;
   document.querySelectorAll('#adminBody [data-tab]').forEach(b=>b.onclick=()=>{ADM_TAB=b.dataset.tab;renderAdmin()});
@@ -1098,10 +1237,11 @@ function renderAdmin(){
         <div class="field"><label>Free colors per item</label><input type="number" id="a_free" value="${A.freeColorsPerItem}"></div>
         <div class="field"><label>Cost per extra color</label><input type="number" id="a_ec" value="${A.extraColorCost}"></div>
         <div class="field"><label>Fee per item over limit</label><input type="number" id="a_ei" value="${A.extraItemFee}"></div>
+        <div class="field"><label>Webstore fee (per item)</label><input type="number" step="0.25" id="a_fee" value="${A.webstoreFee}"></div>
       </div>
       <button class="btn primary" id="a_save">Save</button>`;
     document.getElementById('a_save').onclick=()=>{A.specialistEmail=val('a_email');A.pin=val('a_pin');
-      A.freeColorsPerItem=+val('a_free');A.extraColorCost=+val('a_ec');A.extraItemFee=+val('a_ei');
+      A.freeColorsPerItem=+val('a_free');A.extraColorCost=+val('a_ec');A.extraItemFee=+val('a_ei');A.webstoreFee=+val('a_fee');
       Store.set('apiKey',val('a_key'));saveAdmin(A);toast('Saved');if(P)refresh()};
   }
   if(ADM_TAB==='colors'){
@@ -1150,9 +1290,53 @@ function renderAdmin(){
     wireTable('packages',A);
   }
   if(ADM_TAB==='deco'){
-    pane.innerHTML=`<div class="alert info">Deco cost is a flat placeholder per method today. Share your deco pricing graphs and these become tiered lookups.</div>`+
-      tableEditor('decoMethods',[['name','Method',''],['cost','Flat cost','narrow']],A.decoMethods,()=>({id:'d'+Date.now(),name:'New method',cost:0}));
-    wireTable('decoMethods',A);
+    pane.innerHTML=`<div class="alert info">Each method maps to a pricing model used on the item page. Edit the rate matrices in the <b>Pricing</b> tab.</div>
+      <table class="adm"><thead><tr><th>Method</th><th>Pricing model</th><th></th></tr></thead>
+      <tbody>${A.decoMethods.map((d,i)=>`<tr data-row="${i}">
+        <td><input data-dk="name" value="${esc(d.name)}"></td>
+        <td><select data-dk="model">${optList([['embroidery','Embroidery (size tier)'],['screenprint','Screen print (# colors)'],['httransfer','Heat transfer / DTF (type+size)'],['none','No pricing']],d.model)}</select></td>
+        <td><button class="btn sm danger" data-delrow="${i}">×</button></td></tr>`).join('')}</tbody></table>
+      <button class="btn sm iconplus" id="addDeco" style="margin-top:10px">+ Add method</button>`;
+    pane.querySelectorAll('tr[data-row]').forEach(tr=>{const i=+tr.dataset.row;
+      tr.querySelectorAll('[data-dk]').forEach(el=>el.onchange=el.oninput=()=>{A.decoMethods[i][el.dataset.dk]=el.value;saveAdmin(A);if(P)refresh();});});
+    pane.querySelectorAll('[data-delrow]').forEach(b=>b.onclick=()=>{A.decoMethods.splice(+b.dataset.delrow,1);saveAdmin(A);renderAdmin()});
+    document.getElementById('addDeco').onclick=()=>{A.decoMethods.push({id:'d'+Date.now(),name:'New method',model:'none'});saveAdmin(A);renderAdmin()};
+  }
+  if(ADM_TAB==='pricing'){
+    const PR=A.pricing, E=PR.embroidery, S=PR.screenprint, H=PR.httransfer;
+    const th=brks=>brks.map(b=>`<th class="narrow">${b.l}</th>`).join('');
+    const numCell=(attr,v)=>`<td><input class="narrow" type="number" step="0.05" data-${attr}="" value="${v==null?'':v}"></td>`;
+    pane.innerHTML=`<div class="alert info">Per-piece deco rates. Blank cell = not offered (N/A). Saves as you type; syncs via cloud.</div>
+      <h3 style="font-size:14px;margin:0 0 6px">Batch sizes → quantity used</h3>
+      <table class="adm"><thead><tr><th>Label</th><th class="narrow">Qty</th></tr></thead><tbody>
+        ${A.batchSizes.map((b,i)=>`<tr><td><input data-bs="${i}:label" value="${esc(b.label)}"></td><td><input class="narrow" type="number" data-bs="${i}:qty" value="${b.qty}"></td></tr>`).join('')}
+      </tbody></table>
+
+      <h3 style="font-size:14px;margin:16px 0 6px">Embroidery <span class="muted" style="font-weight:400">— tier cut ≤<input id="pr_embcut" type="number" step="0.5" value="${E.tierCutSqIn}" style="width:54px"> sq in · max <input id="pr_embmax" type="number" step="0.5" value="${E.maxSqIn}" style="width:54px"> sq in</span></h3>
+      <table class="adm"><thead><tr><th>Tier</th>${th(E.breaks)}</tr></thead><tbody>
+        ${['A','B'].map(t=>`<tr><td><b>${t}</b></td>${E.breaks.map((b,i)=>`<td><input class="narrow" type="number" step="0.05" data-emb="${t}:${i}" value="${E.rates[t][i]==null?'':E.rates[t][i]}"></td>`).join('')}</tr>`).join('')}
+      </tbody></table>
+
+      <h3 style="font-size:14px;margin:16px 0 6px">Screen Print <span class="muted" style="font-weight:400">— blank = N/A</span></h3>
+      <table class="adm"><thead><tr><th>Colors</th>${th(S.breaks)}</tr></thead><tbody>
+        ${[1,2,3,4,5].map(c=>`<tr><td><b>${c}</b></td>${S.breaks.map((b,i)=>`<td><input class="narrow" type="number" step="0.05" data-sp="${c}:${i}" value="${S.rates[c][i]==null?'':S.rates[c][i]}"></td>`).join('')}</tr>`).join('')}
+      </tbody></table>
+
+      <h3 style="font-size:14px;margin:16px 0 6px">Heat Transfer / DTF <span class="muted" style="font-weight:400">— size cut ≤<input id="pr_htcut" type="number" step="1" value="${H.sizeCutSqIn}" style="width:54px"> sq in · max <input id="pr_htmax" type="number" step="1" value="${H.maxSqIn}" style="width:54px"> sq in</span></h3>
+      <table class="adm"><thead><tr><th>Type / size</th>${th(H.breaks)}</tr></thead><tbody>
+        ${[['reflective','small','Reflective ≤'+H.sizeCutSqIn],['reflective','large','Reflective ≤'+H.maxSqIn],['fullcolor','small','Full color ≤'+H.sizeCutSqIn],['fullcolor','large','Full color ≤'+H.maxSqIn]].map(([tp,sz,lab])=>`<tr><td>${lab}</td>${H.breaks.map((b,i)=>`<td><input class="narrow" type="number" step="0.05" data-ht="${tp}:${sz}:${i}" value="${H.types[tp][sz][i]==null?'':H.types[tp][sz][i]}"></td>`).join('')}</tr>`).join('')}
+      </tbody></table>
+      <button class="btn primary" id="pr_save" style="margin-top:12px">Save pricing</button>`;
+    const num=v=>v===''?null:+v;
+    pane.querySelectorAll('[data-bs]').forEach(el=>el.oninput=()=>{const[i,f]=el.dataset.bs.split(':');A.batchSizes[+i][f]=f==='qty'?(+el.value):el.value;saveAdmin(A);});
+    pane.querySelectorAll('[data-emb]').forEach(el=>el.oninput=()=>{const[t,i]=el.dataset.emb.split(':');E.rates[t][+i]=num(el.value);saveAdmin(A);});
+    pane.querySelectorAll('[data-sp]').forEach(el=>el.oninput=()=>{const[c,i]=el.dataset.sp.split(':');S.rates[+c][+i]=num(el.value);saveAdmin(A);});
+    pane.querySelectorAll('[data-ht]').forEach(el=>el.oninput=()=>{const[tp,sz,i]=el.dataset.ht.split(':');H.types[tp][sz][+i]=num(el.value);saveAdmin(A);});
+    document.getElementById('pr_embcut').oninput=e=>{E.tierCutSqIn=+e.target.value;saveAdmin(A)};
+    document.getElementById('pr_embmax').oninput=e=>{E.maxSqIn=+e.target.value;saveAdmin(A)};
+    document.getElementById('pr_htcut').oninput=e=>{H.sizeCutSqIn=+e.target.value;saveAdmin(A)};
+    document.getElementById('pr_htmax').oninput=e=>{H.maxSqIn=+e.target.value;saveAdmin(A)};
+    document.getElementById('pr_save').onclick=()=>{saveAdmin(A);toast('Pricing saved');if(P)refresh();};
   }
   if(ADM_TAB==='addons'){
     pane.innerHTML=tableEditor('addons',[['name','Name',''],['desc','Description',''],['cost','Cost','narrow']],A.addons,()=>({id:'a'+Date.now(),name:'New feature',desc:'',cost:0}));
