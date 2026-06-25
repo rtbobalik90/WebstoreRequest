@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TCP Webstore Request</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#14213D; --ink2:#243B6B; --surface:#FBFAF7; --card:#FFFFFF;
+    --line:#E5E1D6; --line2:#EFEBE0; --muted:#6B7280; --muted2:#9AA0AB;
+    --accent:#C8A24B; --accent2:#A9842F; --good:#2E7D5B; --goodbg:#E9F3EE;
+    --warn:#B4540A; --warnbg:#FBEFE3; --danger:#B23A3A; --dangerbg:#F8E9E9;
+    --r:10px; --r2:14px; --sh:0 1px 2px rgba(20,33,61,.06),0 8px 24px rgba(20,33,61,.06);
+    --fs-display:clamp(22px,2.4vw,30px);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--surface); color:var(--ink); -webkit-font-smoothing:antialiased;
+    line-height:1.45; font-size:15px;
+  }
+  button{font-family:inherit; cursor:pointer}
+  input,select,textarea{font-family:inherit; font-size:15px}
+  .eyebrow{font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent2); font-weight:700}
+  .muted{color:var(--muted)}
+  .hidden{display:none !important}
+
+  /* layout */
+  .topbar{
+    position:sticky; top:0; z-index:40; background:var(--ink); color:#fff;
+    display:flex; align-items:center; gap:16px; padding:10px 18px;
+    box-shadow:0 1px 0 rgba(0,0,0,.2);
+  }
+  .brand{display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:.02em}
+  .brand .crown{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+    display:grid;place-items:center;color:#1b1b1b;font-weight:900;font-size:14px}
+  .brand small{display:block;font-weight:500;font-size:10px;letter-spacing:.18em;color:#B9C2D6;text-transform:uppercase}
+  .topbar .spacer{flex:1}
+  .proj-pill{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
+    padding:6px 10px;border-radius:999px;font-size:13px;max-width:280px}
+  .proj-pill b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+  .save-dot{font-size:11px;color:#B9C2D6}
+  .ttotal{display:flex;flex-direction:column;align-items:flex-end;line-height:1.1}
+  .ttotal span{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#B9C2D6}
+  .ttotal b{font-size:18px;color:var(--accent)}
+  .tbtn{background:rgba(255,255,255,.10);color:#fff;border:1px solid rgba(255,255,255,.16);
+    padding:7px 12px;border-radius:8px;font-size:13px;font-weight:600}
+  .tbtn:hover{background:rgba(255,255,255,.18)}
+
+  .shell{display:grid; grid-template-columns:240px 1fr; gap:0; min-height:calc(100vh - 49px)}
+  .rail{border-right:1px solid var(--line); padding:18px 14px; background:#fff}
+  .rail h4{margin:4px 6px 12px; font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted2)}
+  .step{display:flex; gap:11px; align-items:flex-start; padding:11px 10px; border-radius:var(--r); cursor:pointer; margin-bottom:2px}
+  .step:hover{background:var(--line2)}
+  .step.active{background:var(--ink); color:#fff}
+  .step.active .step-sub{color:#C3CBDD}
+  .step .num{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;
+    font-size:12px;font-weight:700;flex:none;color:var(--muted)}
+  .step.active .num{border-color:var(--accent);background:var(--accent);color:#1b1b1b}
+  .step.done .num{border-color:var(--good);background:var(--good);color:#fff}
+  .step-t{font-weight:700;font-size:14px}
+  .step-sub{font-size:11.5px;color:var(--muted)}
+  .rail .railfoot{margin-top:14px;border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:8px}
+
+  .main{padding:26px clamp(16px,3.5vw,42px) 120px; max-width:980px}
+  .page-head{margin-bottom:20px}
+  .page-head h1{font-size:var(--fs-display);margin:6px 0 4px;letter-spacing:-.01em}
+  .page-head p{margin:0;color:var(--muted);max-width:62ch}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r2);padding:20px;box-shadow:var(--sh);margin-bottom:18px}
+  .card h3{margin:0 0 4px;font-size:16px}
+  .card .hint{color:var(--muted);font-size:13px;margin:0 0 16px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+  .field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+  .field label{font-size:12.5px;font-weight:700;color:var(--ink2)}
+  .field .req{color:var(--danger)}
+  .field input,.field select,.field textarea{
+    border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:#fff;color:var(--ink);width:100%}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+  .field small{color:var(--muted);font-size:11.5px}
+  textarea{resize:vertical;min-height:64px}
+
+  .btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:10px 16px;border-radius:9px;font-weight:700;font-size:14px}
+  .btn:hover{border-color:var(--muted2)}
+  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .btn.primary:hover{background:var(--ink2)}
+  .btn.gold{background:var(--accent);border-color:var(--accent);color:#1b1b1b}
+  .btn.gold:hover{background:var(--accent2);border-color:var(--accent2)}
+  .btn.ghost{background:transparent;border-color:transparent;color:var(--ink2)}
+  .btn.sm{padding:7px 11px;font-size:13px}
+  .btn.danger{color:var(--danger);border-color:#E8C9C9}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.iconplus{display:inline-flex;align-items:center;gap:6px}
+
+  .footnav{position:fixed;bottom:0;left:0;right:0;z-index:30;background:#fff;border-top:1px solid var(--line);
+    display:flex;align-items:center;gap:12px;padding:12px clamp(16px,3.5vw,42px)}
+  .footnav .grow{flex:1}
+  .footnav .mini-total{font-size:13px;color:var(--muted)}
+  .footnav .mini-total b{color:var(--ink);font-size:16px}
+
+  /* items */
+  .item-card{border:1px solid var(--line);border-radius:var(--r2);margin-bottom:16px;overflow:hidden;background:#fff;box-shadow:var(--sh)}
+  .item-top{display:flex;gap:12px;align-items:flex-start;padding:16px 18px;border-bottom:1px solid var(--line2);background:#FCFBF8}
+  .item-top .ix{width:30px;height:30px;border-radius:8px;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:800;flex:none}
+  .item-top .meta{flex:1}
+  .item-top .meta .nm{font-weight:800;font-size:15px}
+  .item-top .meta .sku{font-size:12px;color:var(--muted)}
+  .item-sub{font-size:13px;font-weight:800;color:var(--accent2)}
+  .item-body{padding:16px 18px}
+  .pull-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:6px}
+  .pull-row .field{flex:1;min-width:240px;margin-bottom:0}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 4px}
+  .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:6px 12px 6px 8px;
+    background:#fff;font-size:13px;font-weight:600;cursor:pointer;user-select:none}
+  .chip:hover{border-color:var(--muted2)}
+  .chip.on{border-color:var(--ink);background:var(--ink);color:#fff}
+  .chip .sw{width:16px;height:16px;border-radius:50%;border:1px solid rgba(0,0,0,.15);flex:none;background:#ccc}
+  .chip.on .sw{border-color:rgba(255,255,255,.5)}
+  .color-block{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin:10px 0;background:#FCFBF8}
+  .color-block .cbh{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .color-block .cbh .sw{width:20px;height:20px;border-radius:50%;border:1px solid rgba(0,0,0,.15)}
+  .color-block .cbh b{font-size:14px}
+  .logo-row{display:grid;grid-template-columns:70px 1fr 1fr 36px;gap:8px;align-items:end;margin-bottom:8px}
+  .logo-row label{font-size:11px;font-weight:700;color:var(--ink2);display:block;margin-bottom:4px}
+  .logo-row .lab{font-weight:800;font-size:13px;color:var(--ink2);padding-bottom:10px}
+  .logo-row select,.logo-row input{border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;background:#fff}
+  .xbtn{border:1px solid var(--line);background:#fff;border-radius:8px;height:38px;color:var(--danger);font-weight:800}
+  .inv-row{display:flex;align-items:center;gap:10px;margin-top:8px;padding-top:10px;border-top:1px dashed var(--line)}
+  .checkbox{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:13px;cursor:pointer}
+  .checkbox input{width:17px;height:17px}
+  .cs-wrap{display:flex;align-items:center;gap:8px}
+  .cs-wrap input{border:1px solid var(--line);border-radius:8px;padding:7px 10px;width:140px;background:#fff;font-weight:700;letter-spacing:.04em}
+  .alert{border-radius:9px;padding:10px 12px;font-size:13px;margin:8px 0}
+  .alert.warn{background:var(--warnbg);color:#7a3a07;border:1px solid #EBC9A6}
+  .alert.good{background:var(--goodbg);color:#205c43;border:1px solid #BFE0CF}
+  .alert.info{background:#EEF2FB;color:#2a3a63;border:1px solid #CFD9EE}
+  .breakdown{font-size:13px;color:var(--muted);margin-top:8px;border-top:1px solid var(--line2);padding-top:10px}
+  .breakdown div{display:flex;justify-content:space-between;padding:2px 0}
+  .breakdown .tot{color:var(--ink);font-weight:800;border-top:1px solid var(--line2);margin-top:4px;padding-top:6px}
+
+  /* uploads */
+  .up{border:1.5px dashed var(--line);border-radius:var(--r);padding:16px;text-align:center;background:#FCFBF8;cursor:pointer}
+  .up:hover{border-color:var(--accent)}
+  .up img{max-width:100%;max-height:120px;border-radius:8px;margin-top:8px}
+  .up .ph{color:var(--muted);font-size:13px}
+  .swatches{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .swrow{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:4px 6px 4px 4px}
+  .swrow input[type=color]{width:28px;height:28px;border:none;background:none;padding:0;border-radius:50%}
+  .swrow input[type=text]{border:none;width:90px}
+  .swrow button{border:none;background:none;color:var(--danger);font-weight:800;cursor:pointer}
+
+  /* addons */
+  .addon{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:10px;background:#fff}
+  .addon input{width:18px;height:18px;margin-top:2px}
+  .addon .ad-t{font-weight:800}
+  .addon .ad-d{font-size:13px;color:var(--muted)}
+  .addon .ad-c{margin-left:auto;font-weight:800;color:var(--accent2);white-space:nowrap}
+
+  /* checklist */
+  .check{display:flex;gap:10px;align-items:center;padding:7px 0;font-size:14px}
+  .check .dot{width:18px;height:18px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:11px;font-weight:900}
+  .check .dot.ok{background:var(--good);color:#fff}
+  .check .dot.no{background:var(--dangerbg);color:var(--danger);border:1px solid #E8C9C9}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(20,33,61,.45);z-index:60;display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+  .overlay.show{display:flex}
+  .modal{background:#fff;border-radius:16px;max-width:680px;width:100%;box-shadow:0 30px 80px rgba(0,0,0,.3)}
+  .modal-h{display:flex;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line)}
+  .modal-h h2{margin:0;font-size:18px}
+  .modal-h .x{margin-left:auto;border:none;background:none;font-size:22px;color:var(--muted);cursor:pointer}
+  .modal-b{padding:22px}
+  .proj-item{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin-bottom:10px}
+  .proj-item .pi-t{font-weight:800}
+  .proj-item .pi-s{font-size:12px;color:var(--muted)}
+  .proj-item .pi-actions{margin-left:auto;display:flex;gap:8px}
+  .tag{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:999px}
+  .tag.draft{background:var(--warnbg);color:var(--warn)}
+  .tag.submitted{background:var(--goodbg);color:var(--good)}
+
+  /* admin */
+  .adm-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  .adm-tabs button{border:1px solid var(--line);background:#fff;padding:7px 12px;border-radius:999px;font-size:13px;font-weight:700;color:var(--muted)}
+  .adm-tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  table.adm{width:100%;border-collapse:collapse;font-size:13px}
+  table.adm th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line)}
+  table.adm td{padding:6px 8px;border-bottom:1px solid var(--line2)}
+  table.adm input{border:1px solid var(--line);border-radius:7px;padding:6px 8px;width:100%}
+  table.adm .narrow{width:90px}
+
+  .toast{position:fixed;bottom:78px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:10px;
+    font-size:14px;font-weight:600;z-index:80;box-shadow:var(--sh);opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1}
+
+  @media(max-width:820px){
+    .shell{grid-template-columns:1fr}
+    .rail{border-right:none;border-bottom:1px solid var(--line);display:flex;overflow-x:auto;gap:6px;padding:10px}
+    .rail h4,.rail .railfoot{display:none}
+    .step{margin:0;white-space:nowrap}
+    .step-sub{display:none}
+    .grid2,.grid3{grid-template-columns:1fr}
+    .logo-row{grid-template-columns:1fr 1fr;gap:8px}
+    .logo-row .lab{grid-column:1/-1}
+    .ttotal{display:none}
+    .proj-pill{max-width:150px}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="crown">TC</div>
+    <div>Triple Crown Products<small>Webstore Request</small></div>
+  </div>
+  <div class="proj-pill" id="projPill" style="display:none">
+    <span>📁</span><b id="projName">Untitled</b><span class="save-dot" id="saveDot">saved</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="ttotal" id="topTotal" style="display:none"><span>Setup total</span><b id="topTotalVal">$0.00</b></div>
+  <button class="tbtn" id="btnProjects">Projects</button>
+  <button class="tbtn" id="btnAdmin">Admin</button>
+</div>
+
+<!-- LANDING -->
+<div id="landing" style="max-width:760px;margin:8vh auto;padding:0 20px">
+  <div class="eyebrow">Sales rep portal</div>
+  <h1 style="font-size:clamp(26px,4vw,40px);margin:8px 0 10px;letter-spacing:-.02em">Request a webstore</h1>
+  <p class="muted" style="max-width:60ch;margin:0 0 26px">Spec a store one page at a time — store info, items and decoration, design, add-ons, then the setup invoice. Save and come back any time. Submit builds the spec sheet for the webstore specialist.</p>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    <button class="btn gold" id="btnNew">+ Start a new request</button>
+    <button class="btn" id="btnOpenExisting">Open a saved request</button>
+  </div>
+  <div id="recentWrap" style="margin-top:30px"></div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+  <div class="shell">
+    <nav class="rail" id="rail"></nav>
+    <main class="main" id="main"></main>
+  </div>
+</div>
+
+<div class="footnav hidden" id="footnav">
+  <button class="btn" id="navBack">← Back</button>
+  <div class="grow"></div>
+  <div class="mini-total">Setup total&nbsp; <b id="footTotal">$0.00</b></div>
+  <button class="btn" id="navSave">Save</button>
+  <button class="btn primary" id="navNext">Next →</button>
+</div>
+
+<!-- overlays -->
+<div class="overlay" id="ovProjects"><div class="modal"><div class="modal-h"><h2>Saved requests</h2><button class="x" data-close>×</button></div><div class="modal-b" id="projList"></div></div></div>
+<div class="overlay" id="ovAdmin"><div class="modal" style="max-width:760px"><div class="modal-h"><h2>Admin settings</h2><button class="x" data-close>×</button></div><div class="modal-b" id="adminBody"></div></div></div>
+<div class="overlay" id="ovPin"><div class="modal" style="max-width:380px"><div class="modal-h"><h2>Admin PIN</h2><button class="x" data-close>×</button></div><div class="modal-b">
+  <div class="field"><label>Enter PIN</label><input type="password" id="pinInput" placeholder="••••"></div>
+  <button class="btn primary" id="pinGo" style="width:100%">Unlock</button>
+  <p class="muted" style="font-size:12px;margin-top:10px">Default PIN is <b>1234</b> — change it in admin → general.</p>
+</div></div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================== STORE ============================== */
+const PREFIX='wsr_';
+const Store={
+  get(k,d){try{const v=localStorage.getItem(PREFIX+k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set(k,v){try{localStorage.setItem(PREFIX+k,JSON.stringify(v))}catch(e){toast('Storage full — consider cloud sync')}},
+  del(k){localStorage.removeItem(PREFIX+k)}
+};
+
+/* default admin settings (everything editable in Admin) */
+const DEFAULT_ADMIN={
+  pin:'1234',
+  specialistEmail:'',
+  freeColorsPerItem:3,
+  extraColorCost:10,
+  extraItemFee:25,
+  packages:[
+    {id:'p1',name:'Standard Store',itemLimit:10,baseCost:0},
+    {id:'p2',name:'Premium Store',itemLimit:25,baseCost:0},
+    {id:'p3',name:'Custom / Enterprise',itemLimit:50,baseCost:0}
+  ],
+  /* deco cost is a PLACEHOLDER flat cost per method — swapped for graph logic later */
+  decoMethods:[
+    {id:'emb',name:'Embroidery',cost:0},
+    {id:'sp',name:'Screen Print',cost:0},
+    {id:'dtg',name:'DTG',cost:0},
+    {id:'ht',name:'Heat Transfer',cost:0},
+    {id:'vinyl',name:'Vinyl',cost:0},
+    {id:'patch',name:'Patch',cost:0}
+  ],
+  addons:[
+    {id:'a1',name:'Name & number personalization',desc:'Buyers add a name and/or number to garments at checkout.',cost:0},
+    {id:'a2',name:'Group / bulk ordering',desc:'Allows team or roster-based bulk purchasing.',cost:0},
+    {id:'a3',name:'Custom size chart',desc:'Adds a product-specific size chart to listings.',cost:0},
+    {id:'a4',name:'Sponsor / secondary logos',desc:'Supports additional sponsor logos on garments.',cost:0},
+    {id:'a5',name:'Fundraising markup',desc:'Adds a configurable markup that routes to a fundraising goal.',cost:0}
+  ],
+  storeTypes:['Team / Organization','Corporate','Fundraiser','Event / One-time','School','Other'],
+  cloud:{gistId:'',token:''}
+};
+function admin(){const a=Store.get('admin');return a?Object.assign({},DEFAULT_ADMIN,a):JSON.parse(JSON.stringify(DEFAULT_ADMIN))}
+function saveAdmin(a){Store.set('admin',a)}
+if(!Store.get('admin'))saveAdmin(DEFAULT_ADMIN);
+
+/* CS number counter — shared if cloud sync is configured */
+function mintCS(){
+  let n=Store.get('csCounter',0)+1; Store.set('csCounter',n);
+  return 'CS-'+String(n).padStart(6,'0');
+}
+
+/* ============================== STATE ============================== */
+let P=null;          // current project
+let STEP=0;
+const STEPS=[
+  {t:'Request',sub:'Store & contact'},
+  {t:'Items',sub:'Products & deco'},
+  {t:'Design',sub:'Logos & colors'},
+  {t:'Add-ons',sub:'Optional features'},
+  {t:'Invoice',sub:'Setup cost & submit'}
+];
+
+function blankProject(){
+  return {
+    id:'WS-'+Date.now().toString(36).toUpperCase(),
+    status:'draft', createdAt:Date.now(), updatedAt:Date.now(),
+    request:{packageId:'', storeType:'', storeName:'', repName:'', repEmail:'',
+             companyName:'', contactName:'', contactEmail:'', contactPhone:'',
+             launchDate:'', notes:''},
+    items:[],
+    design:{header:null,footer:null,background:null,colors:[]},
+    addons:{},   // id -> true
+    invoice:{receipt:null, receiptName:''}
+  };
+}
+function newItem(){
+  return {id:'I'+Math.random().toString(36).slice(2,8), url:'', sku:'', name:'', description:'',
+          pulledColors:[], colors:[], inventoried:false, csNumber:''};
+}
+// color object: {name, hex, logos:[{id,deco,coid}]}
+
+/* ============================== PERSISTENCE ============================== */
+function projects(){return Store.get('projects',{})}
+function persist(silent){
+  if(!P)return;
+  P.updatedAt=Date.now();
+  const all=projects(); all[P.id]=P; Store.set('projects',all);
+  Store.set('currentId',P.id);
+  if(!silent){flashSaved()}
+}
+function flashSaved(){const d=document.getElementById('saveDot');if(d){d.textContent='saved ✓';setTimeout(()=>d.textContent='saved',1400)}}
+function loadProject(id){const all=projects();if(all[id]){P=all[id];STEP=0;enterApp()}}
+function deleteProject(id){const all=projects();delete all[id];Store.set('projects',all);renderProjectList();renderRecent()}
+
+/* ============================== PRICING ============================== */
+function decoCost(decoId){const m=admin().decoMethods.find(d=>d.id===decoId);return m?(+m.cost||0):0}
+function itemBreakdown(it){
+  const A=admin();
+  const selColors=it.colors.length;
+  const extraColors=Math.max(0,selColors-(+A.freeColorsPerItem||3));
+  const extraColorCost=extraColors*(+A.extraColorCost||0);
+  let decoTotal=0, logoCount=0;
+  it.colors.forEach(c=>c.logos.forEach(l=>{if(l.deco){decoTotal+=decoCost(l.deco);logoCount++}}));
+  return {selColors,extraColors,extraColorCost,decoTotal,logoCount,total:extraColorCost+decoTotal};
+}
+function packageOf(){return admin().packages.find(p=>p.id===P.request.packageId)}
+function storeTotals(){
+  const A=admin(); const pkg=packageOf();
+  const base=pkg?(+pkg.baseCost||0):0;
+  let items=0; P.items.forEach(it=>items+=itemBreakdown(it).total);
+  let extraItems=0;
+  if(pkg){const over=Math.max(0,P.items.length-(+pkg.itemLimit||0));extraItems=over*(+A.extraItemFee||0);}
+  let addons=0; A.addons.forEach(a=>{if(P.addons[a.id])addons+=(+a.cost||0)});
+  return {base,items,extraItems,addons,grand:base+items+extraItems+addons};
+}
+const money=n=>'$'+(Math.round((+n||0)*100)/100).toFixed(2);
+
+/* ============================== RENDER SHELL ============================== */
+function enterApp(){
+  document.getElementById('landing').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('footnav').classList.remove('hidden');
+  document.getElementById('projPill').style.display='flex';
+  document.getElementById('topTotal').style.display='flex';
+  renderRail(); renderStep(); persist(true);
+}
+function renderRail(){
+  const rail=document.getElementById('rail');
+  const done=stepDone();
+  rail.innerHTML='<h4>Steps</h4>'+STEPS.map((s,i)=>`
+    <div class="step ${i===STEP?'active':''} ${done[i]?'done':''}" data-step="${i}">
+      <div class="num">${done[i]?'✓':(i+1)}</div>
+      <div><div class="step-t">${s.t}</div><div class="step-sub">${s.sub}</div></div>
+    </div>`).join('')+`
+    <div class="railfoot">
+      <button class="btn sm" id="railProjects">All requests</button>
+      <button class="btn sm ghost" id="railNew">+ New request</button>
+    </div>`;
+  rail.querySelectorAll('.step').forEach(el=>el.onclick=()=>{STEP=+el.dataset.step;renderRail();renderStep()});
+  document.getElementById('railProjects').onclick=openProjects;
+  document.getElementById('railNew').onclick=startNew;
+  document.getElementById('projName').textContent=P.request.storeName||P.id;
+  const t=storeTotals().grand;
+  document.getElementById('topTotalVal').textContent=money(t);
+  document.getElementById('footTotal').textContent=money(t);
+  document.getElementById('navBack').disabled=STEP===0;
+  const next=document.getElementById('navNext');
+  if(STEP===STEPS.length-1){next.textContent='Review & submit ↓';}else{next.textContent='Next →';}
+}
+function renderStep(){
+  const m=document.getElementById('main');
+  [renderRequest,renderItems,renderDesign,renderAddons,renderInvoice][STEP](m);
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function refresh(){renderRail();persist(true)}
+
+/* step completion logic for the rail check + submit gate */
+function stepDone(){
+  const r=P.request;
+  const d0=!!(r.packageId&&r.storeType&&r.storeName&&r.repName&&r.companyName&&r.contactName&&r.contactEmail);
+  const d1=P.items.length>0 && P.items.every(it=>it.name && it.colors.length>0 &&
+            (!it.inventoried||it.csNumber) &&
+            it.colors.every(c=>c.logos.length===0||c.logos.every(l=>l.deco)));
+  const d2=!!(P.design.header&&P.design.footer&&P.design.background&&P.design.colors.length>0);
+  const d3=true; // add-ons optional
+  const d4=!!(P.invoice.receipt);
+  return [d0,d1,d2,d3,d4];
+}
+
+/* ============================== STEP 1 — REQUEST ============================== */
+function renderRequest(m){
+  const A=admin(), r=P.request;
+  m.innerHTML=`
+  <div class="page-head"><div class="eyebrow">Step 1 of 5</div><h1>Store & contact</h1>
+    <p>Pick the package, then tell us who this store is for. The package sets the item limit and free-color rules used in pricing.</p></div>
+  <div class="card">
+    <h3>Store type & package</h3><p class="hint">Choosing the package sets the item limit and pricing for the whole request.</p>
+    <div class="grid2">
+      <div class="field"><label>Package <span class="req">*</span></label>
+        <select id="f_pkg">${optList(A.packages.map(p=>[p.id,`${p.name} — up to ${p.itemLimit} items`]),r.packageId,'Select a package…')}</select>
+        <small id="pkgNote"></small></div>
+      <div class="field"><label>Store type <span class="req">*</span></label>
+        <select id="f_type">${optList(A.storeTypes.map(t=>[t,t]),r.storeType,'Select a type…')}</select></div>
+    </div>
+    <div class="field"><label>Store name <span class="req">*</span></label><input id="f_sname" value="${esc(r.storeName)}" placeholder="e.g. Lincoln HS Booster Store"></div>
+  </div>
+  <div class="card">
+    <h3>Requesting rep</h3>
+    <div class="grid2">
+      <div class="field"><label>Rep name <span class="req">*</span></label><input id="f_rep" value="${esc(r.repName)}"></div>
+      <div class="field"><label>Rep email</label><input id="f_repe" value="${esc(r.repEmail)}" placeholder="you@triplecrownproducts.com"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Company & contact</h3>
+    <div class="grid2">
+      <div class="field"><label>Company / organization <span class="req">*</span></label><input id="f_co" value="${esc(r.companyName)}"></div>
+      <div class="field"><label>Contact name <span class="req">*</span></label><input id="f_cn" value="${esc(r.contactName)}"></div>
+      <div class="field"><label>Contact email <span class="req">*</span></label><input id="f_ce" value="${esc(r.contactEmail)}"></div>
+      <div class="field"><label>Contact phone</label><input id="f_cp" value="${esc(r.contactPhone)}"></div>
+      <div class="field"><label>Target launch date</label><input type="date" id="f_ld" value="${esc(r.launchDate)}"></div>
+    </div>
+    <div class="field"><label>Notes for the specialist</label><textarea id="f_notes" placeholder="Anything the webstore specialist should know…">${esc(r.notes)}</textarea></div>
+  </div>`;
+  const bind=(id,key,fn)=>{const el=document.getElementById(id);el.oninput=()=>{r[key]=el.value;if(fn)fn();refresh()}};
+  bind('f_pkg','packageId',updatePkgNote); bind('f_type','storeType'); bind('f_sname','storeName');
+  bind('f_rep','repName'); bind('f_repe','repEmail'); bind('f_co','companyName');
+  bind('f_cn','contactName'); bind('f_ce','contactEmail'); bind('f_cp','contactPhone');
+  bind('f_ld','launchDate'); bind('f_notes','notes');
+  updatePkgNote();
+  function updatePkgNote(){const p=A.packages.find(x=>x.id===r.packageId);
+    document.getElementById('pkgNote').textContent=p?`Item limit ${p.itemLimit} · ${A.freeColorsPerItem} colors free per item · base ${money(p.baseCost)}`:'';}
+}
+
+/* ============================== STEP 2 — ITEMS ============================== */
+function renderItems(m){
+  const A=admin(), pkg=packageOf();
+  const over = pkg ? Math.max(0,P.items.length-(+pkg.itemLimit||0)) : 0;
+  m.innerHTML=`
+  <div class="page-head"><div class="eyebrow">Step 2 of 5</div><h1>Items & decoration</h1>
+    <p>Paste a Triple Crown product link to pull the details, pick the colors, then add the logos and decoration for each color. ${pkg?`This package allows <b>${pkg.itemLimit}</b> items; ${A.freeColorsPerItem} colors per item are free.`:'<b>Pick a package on step 1</b> to enable limits and pricing.'}</p></div>
+  ${over>0?`<div class="alert warn">You're <b>${over}</b> item${over>1?'s':''} over the package limit. Each extra item adds ${money(A.extraItemFee)} (${money(over*A.extraItemFee)} so far).</div>`:''}
+  <div id="itemList"></div>
+  <button class="btn gold iconplus" id="addItem">+ Add new item</button>`;
+  document.getElementById('addItem').onclick=()=>{P.items.push(newItem());refresh();renderStep()};
+  const list=document.getElementById('itemList');
+  if(P.items.length===0){list.innerHTML=`<div class="card" style="text-align:center;color:var(--muted)">No items yet. Click <b>Add new item</b> to start.</div>`;return;}
+  list.innerHTML=P.items.map((it,i)=>itemCardHTML(it,i)).join('');
+  P.items.forEach((it,i)=>wireItem(it,i));
+}
+function itemCardHTML(it,i){
+  const bd=itemBreakdown(it);
+  return `<div class="item-card" data-i="${i}">
+    <div class="item-top">
+      <div class="ix">${i+1}</div>
+      <div class="meta"><div class="nm">${esc(it.name)||'Untitled item'}</div><div class="sku">${esc(it.sku)||'no SKU'}</div></div>
+      <div style="text-align:right"><div class="item-sub">${money(bd.total)}</div>
+        <button class="btn sm danger" data-act="del">Remove</button></div>
+    </div>
+    <div class="item-body">
+      <div class="pull-row">
+        <div class="field"><label>Triple Crown product link</label><input data-f="url" value="${esc(it.url)}" placeholder="https://www.triplecrownproducts.com/..."></div>
+        <button class="btn primary" data-act="pull">Pull details</button>
+      </div>
+      <div data-pullmsg></div>
+      <div class="grid3">
+        <div class="field"><label>SKU</label><input data-f="sku" value="${esc(it.sku)}"></div>
+        <div class="field"><label>Item name</label><input data-f="name" value="${esc(it.name)}"></div>
+        <div class="field"><label>Description</label><input data-f="description" value="${esc(it.description)}"></div>
+      </div>
+
+      <label style="font-size:12.5px;font-weight:700;color:var(--ink2)">Colors — select what the store offers</label>
+      <div class="chips" data-chips>${colorChips(it)}</div>
+      ${it.pulledColors.length===0?`<small class="muted">No colors pulled yet — pull details above, or add colors manually.</small>`:''}
+      <div style="margin:8px 0"><input data-newcolor placeholder="Add a color manually…" style="border:1px solid var(--line);border-radius:8px;padding:7px 10px;width:200px">
+        <button class="btn sm" data-act="addcolor">Add color</button></div>
+
+      <div data-colorblocks>${it.colors.map(c=>colorBlockHTML(it,c)).join('')}</div>
+
+      <div class="inv-row">
+        <label class="checkbox"><input type="checkbox" data-f="inv" ${it.inventoried?'checked':''}> Inventoried item</label>
+        <div data-csarea>${it.inventoried?csAreaHTML(it):''}</div>
+      </div>
+
+      <div class="breakdown">
+        <div><span>Colors selected (${bd.selColors})</span><span>${bd.extraColors>0?`${bd.extraColors} over free → ${money(bd.extraColorCost)}`:'within free 3'}</span></div>
+        <div><span>Logos / decoration (${bd.logoCount})</span><span>${money(bd.decoTotal)}</span></div>
+        <div class="tot"><span>Item total</span><span>${money(bd.total)}</span></div>
+      </div>
+    </div></div>`;
+}
+function colorChips(it){
+  const names=new Set(it.colors.map(c=>c.name.toLowerCase()));
+  const pool=it.pulledColors.length?it.pulledColors:it.colors.map(c=>c.name);
+  return [...new Set(pool)].map(nm=>{
+    const on=names.has(nm.toLowerCase());
+    return `<span class="chip ${on?'on':''}" data-color="${esc(nm)}"><span class="sw" style="background:${guessHex(nm)}"></span>${esc(nm)}</span>`;
+  }).join('');
+}
+function colorBlockHTML(it,c){
+  return `<div class="color-block" data-cb="${esc(c.name)}">
+    <div class="cbh"><span class="sw" style="background:${c.hex||guessHex(c.name)}"></span><b>${esc(c.name)}</b>
+      <span class="muted" style="font-size:12px">— logos & decoration</span></div>
+    ${c.logos.map((l,li)=>logoRowHTML(l,li)).join('')}
+    <button class="btn sm iconplus" data-act="addlogo">+ Add logo</button>
+  </div>`;
+}
+function logoRowHTML(l,li){
+  const A=admin();
+  return `<div class="logo-row" data-li="${li}">
+    <div class="lab">Logo ${li+1}</div>
+    <div><label>Deco method</label><select data-l="deco">${optList(A.decoMethods.map(d=>[d.id,d.name]),l.deco,'Method…')}</select></div>
+    <div><label>COID</label><input data-l="coid" value="${esc(l.coid)}" placeholder="COID"></div>
+    <button class="xbtn" data-act="dellogo" title="Remove logo">×</button>
+  </div>`;
+}
+function csAreaHTML(it){
+  return `<div class="cs-wrap"><span class="alert warn" style="margin:0">⚠ Inventoried — a CS number is required.</span>
+    <input data-f="cs" value="${esc(it.csNumber)}" placeholder="CS-000000">
+    <button class="btn sm" data-act="gencs">Generate</button></div>`;
+}
+function wireItem(it,i){
+  const card=document.querySelector(`.item-card[data-i="${i}"]`);
+  card.querySelectorAll('[data-f]').forEach(el=>{
+    const f=el.dataset.f;
+    if(f==='inv'){el.onchange=()=>{it.inventoried=el.checked;if(it.inventoried&&!it.csNumber)it.csNumber=mintCS();refresh();renderStep()};return;}
+    el.oninput=()=>{it[f==='cs'?'csNumber':f]=el.value;refresh();
+      if(f==='name'||f==='sku')card.querySelector('.nm').textContent=it.name||'Untitled item';};
+  });
+  card.querySelector('[data-act="del"]').onclick=()=>{if(confirm('Remove this item?')){P.items.splice(i,1);refresh();renderStep()}};
+  card.querySelector('[data-act="pull"]').onclick=()=>pullProduct(it,i);
+  card.querySelector('[data-act="addcolor"]').onclick=()=>{
+    const inp=card.querySelector('[data-newcolor]');const nm=inp.value.trim();if(!nm)return;
+    if(!it.pulledColors.map(x=>x.toLowerCase()).includes(nm.toLowerCase()))it.pulledColors.push(nm);
+    toggleColor(it,nm,true);refresh();renderStep();
+  };
+  card.querySelectorAll('[data-color]').forEach(ch=>ch.onclick=()=>{toggleColor(it,ch.dataset.color);refresh();renderStep()});
+  // color blocks
+  card.querySelectorAll('[data-cb]').forEach(cb=>{
+    const cname=cb.dataset.cb; const c=it.colors.find(x=>x.name===cname); if(!c)return;
+    cb.querySelector('[data-act="addlogo"]').onclick=()=>{c.logos.push({id:'L'+Math.random().toString(36).slice(2,7),deco:'',coid:''});refresh();renderStep()};
+    cb.querySelectorAll('.logo-row').forEach(row=>{
+      const li=+row.dataset.li;
+      row.querySelectorAll('[data-l]').forEach(el=>el.oninput=()=>{c.logos[li][el.dataset.l]=el.value;refresh()});
+      row.querySelector('[data-act="dellogo"]').onclick=()=>{c.logos.splice(li,1);refresh();renderStep()};
+    });
+  });
+  // cs area
+  const csa=card.querySelector('[data-csarea]');
+  if(csa){const g=csa.querySelector('[data-act="gencs"]');if(g)g.onclick=()=>{it.csNumber=mintCS();refresh();renderStep()};}
+}
+function toggleColor(it,name,force){
+  const idx=it.colors.findIndex(c=>c.name.toLowerCase()===name.toLowerCase());
+  if(idx>=0 && !force){it.colors.splice(idx,1);}
+  else if(idx<0){it.colors.push({name,hex:guessHex(name),logos:[]});}
+}
+
+/* product pull via Claude API (web search) with manual fallback */
+async function pullProduct(it,i){
+  const card=document.querySelector(`.item-card[data-i="${i}"]`);
+  const msg=card.querySelector('[data-pullmsg]');
+  if(!it.url.trim()){msg.innerHTML=`<div class="alert warn">Paste a product link first, or fill the fields manually below.</div>`;return;}
+  msg.innerHTML=`<div class="alert info">Pulling product details…</div>`;
+  try{
+    const res=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        model:"claude-sonnet-4-6",max_tokens:1000,
+        tools:[{type:"web_search_20250305",name:"web_search"}],
+        messages:[{role:"user",content:
+          `Look up this Triple Crown Products product page and extract its details: ${it.url}\n`+
+          `Return ONLY a raw JSON object, no markdown, no commentary, with keys: `+
+          `"sku" (string), "name" (string), "description" (string, max 200 chars), `+
+          `"colors" (array of color name strings offered for this product). `+
+          `If you cannot find it, return {"error":"not found"}.`}]
+      })
+    });
+    const data=await res.json();
+    const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    const json=extractJSON(text);
+    if(!json||json.error){msg.innerHTML=`<div class="alert warn">Couldn't pull this one automatically. Fill the fields manually below — colors can be added by hand.</div>`;return;}
+    if(json.sku)it.sku=json.sku;
+    if(json.name)it.name=json.name;
+    if(json.description)it.description=json.description;
+    if(Array.isArray(json.colors)&&json.colors.length){
+      it.pulledColors=[...new Set(json.colors.map(c=>String(c).trim()).filter(Boolean))];
+    }
+    refresh();renderStep();
+    const m2=document.querySelector(`.item-card[data-i="${i}"] [data-pullmsg]`);
+    if(m2)m2.innerHTML=`<div class="alert good">Pulled ✓ — confirm the details and check off the colors you want.</div>`;
+  }catch(e){
+    msg.innerHTML=`<div class="alert warn">Pull failed (${esc(e.message||'network')}). You can still enter everything manually.</div>`;
+  }
+}
+function extractJSON(t){if(!t)return null;t=t.replace(/```json/gi,'').replace(/```/g,'');const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a<0||b<0)return null;try{return JSON.parse(t.slice(a,b+1))}catch(e){return null}}
+
+/* ============================== STEP 3 — DESIGN ============================== */
+function renderDesign(m){
+  const d=P.design;
+  m.innerHTML=`
+  <div class="page-head"><div class="eyebrow">Step 3 of 5</div><h1>Store design</h1>
+    <p>Upload the artwork for the storefront and choose the store's colors. Images are stored with the request.</p></div>
+  <div class="card"><h3>Artwork</h3><p class="hint">Header and footer logos plus a background image are required.</p>
+    <div class="grid3">
+      ${uploadBox('header','Header logo',d.header)}
+      ${uploadBox('footer','Footer logo',d.footer)}
+      ${uploadBox('background','Background image',d.background)}
+    </div>
+  </div>
+  <div class="card"><h3>Store colors</h3><p class="hint">Add one or more brand colors for the storefront theme.</p>
+    <div class="swatches" id="swatches"></div>
+    <button class="btn sm iconplus" id="addSw" style="margin-top:10px">+ Add color</button>
+  </div>`;
+  ['header','footer','background'].forEach(k=>wireUpload(k));
+  renderSwatches();
+  document.getElementById('addSw').onclick=()=>{d.colors.push({hex:'#224C98',name:''});renderSwatches();refresh()};
+  function renderSwatches(){
+    const wrap=document.getElementById('swatches');
+    wrap.innerHTML=d.colors.length?d.colors.map((c,i)=>`<div class="swrow">
+      <input type="color" value="${c.hex||'#224C98'}" data-si="${i}" data-k="hex">
+      <input type="text" value="${esc(c.name||'')}" placeholder="name" data-si="${i}" data-k="name">
+      <button data-del="${i}">×</button></div>`).join(''):'<span class="muted">No colors yet.</span>';
+    wrap.querySelectorAll('input').forEach(el=>el.oninput=()=>{d.colors[+el.dataset.si][el.dataset.k]=el.value;refresh()});
+    wrap.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{d.colors.splice(+b.dataset.del,1);renderSwatches();refresh()});
+  }
+}
+function uploadBox(key,label,val){
+  return `<div><label style="font-size:12.5px;font-weight:700;color:var(--ink2)">${label} <span class="req">*</span></label>
+    <div class="up" data-up="${key}">${val?`<img src="${val}"><div class="ph">Click to replace</div>`:`<div class="ph">📤 Click to upload<br><small>PNG / JPG</small></div>`}</div></div>`;
+}
+function wireUpload(key){
+  const box=document.querySelector(`[data-up="${key}"]`);
+  box.onclick=()=>{const inp=document.createElement('input');inp.type='file';inp.accept='image/*';
+    inp.onchange=e=>{const f=e.target.files[0];if(!f)return;downscale(f,dataURL=>{P.design[key]=dataURL;refresh();renderStep()})};inp.click();};
+}
+function downscale(file,cb,max=1100,q=.82){
+  const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{
+    let{width:w,height:h}=img;if(w>max||h>max){const s=Math.min(max/w,max/h);w=Math.round(w*s);h=Math.round(h*s);}
+    const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);
+    cb(cv.toDataURL('image/jpeg',q));};img.src=r.result;};r.readAsDataURL(file);
+}
+
+/* ============================== STEP 4 — ADD-ONS ============================== */
+function renderAddons(m){
+  const A=admin();
+  m.innerHTML=`
+  <div class="page-head"><div class="eyebrow">Step 4 of 5</div><h1>Add-on features</h1>
+    <p>Optional features for the store. None are turned on by default. Pricing is set in admin — most show ${money(0)} today.</p></div>
+  <div class="card"><h3>Available features</h3><p class="hint">Check the ones this store needs.</p>
+  ${A.addons.map(a=>`<label class="addon"><input type="checkbox" data-addon="${a.id}" ${P.addons[a.id]?'checked':''}>
+     <div><div class="ad-t">${esc(a.name)}</div><div class="ad-d">${esc(a.desc)}</div></div>
+     <div class="ad-c">${money(a.cost)}</div></label>`).join('')}
+  </div>`;
+  m.querySelectorAll('[data-addon]').forEach(el=>el.onchange=()=>{
+    if(el.checked)P.addons[el.dataset.addon]=true;else delete P.addons[el.dataset.addon];refresh();});
+}
+
+/* ============================== STEP 5 — INVOICE ============================== */
+function renderInvoice(m){
+  const A=admin(), t=storeTotals(), pkg=packageOf(), done=stepDone();
+  const labels=['Store & contact','Items & decoration','Store design','Add-ons','Receipt uploaded'];
+  const ready=done[0]&&done[1]&&done[2]&&done[4];
+  m.innerHTML=`
+  <div class="page-head"><div class="eyebrow">Step 5 of 5</div><h1>Setup invoice</h1>
+    <p>Review the setup cost, upload the receipt, and submit. Submitting builds the specialist's spec sheet and opens a pre-filled email.</p></div>
+  <div class="card"><h3>Cost summary</h3>
+    <div class="breakdown" style="font-size:14px">
+      <div><span>${pkg?esc(pkg.name)+' base':'Package base'}</span><span>${money(t.base)}</span></div>
+      <div><span>Items & decoration (${P.items.length})</span><span>${money(t.items)}</span></div>
+      <div><span>Items over package limit</span><span>${money(t.extraItems)}</span></div>
+      <div><span>Add-on features</span><span>${money(t.addons)}</span></div>
+      <div class="tot" style="font-size:18px"><span>Setup total</span><span>${money(t.grand)}</span></div>
+    </div>
+  </div>
+  <div class="card"><h3>Receipt</h3><p class="hint">Upload the setup-fee receipt to complete the request.</p>
+    <div class="up" data-up="receipt" style="max-width:360px">${P.invoice.receipt?`<img src="${P.invoice.receipt}"><div class="ph">Click to replace</div>`:`<div class="ph">📤 Upload receipt<br><small>image</small></div>`}</div>
+  </div>
+  <div class="card"><h3>Ready to submit?</h3><p class="hint">Everything below must be complete before you can submit.</p>
+    ${labels.map((l,i)=>`<div class="check"><div class="dot ${done[i]?'ok':'no'}">${done[i]?'✓':'!'}</div>${l}</div>`).join('')}
+    ${!A.specialistEmail?`<div class="alert warn" style="margin-top:12px">No specialist email set in admin — the spec sheet will still download, but the email won't pre-fill a recipient.</div>`:''}
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn gold" id="btnSubmit" ${ready?'':'disabled'}>Submit webstore request</button>
+      <button class="btn" id="btnExportOnly">Download spec sheet only</button>
+    </div>
+    ${ready?'':'<small class="muted" style="display:block;margin-top:8px">Finish the unchecked steps to enable submit.</small>'}
+  </div>`;
+  const box=m.querySelector('[data-up="receipt"]');
+  box.onclick=()=>{const inp=document.createElement('input');inp.type='file';inp.accept='image/*';
+    inp.onchange=e=>{const f=e.target.files[0];if(!f)return;P.invoice.receiptName=f.name;downscale(f,d=>{P.invoice.receipt=d;refresh();renderStep()})};inp.click();};
+  document.getElementById('btnExportOnly').onclick=()=>buildExcel(false);
+  document.getElementById('btnSubmit').onclick=()=>{if(!ready)return;buildExcel(true);};
+}
+
+/* ============================== EXCEL + EMAIL ============================== */
+function buildExcel(submit){
+  const A=admin(), t=storeTotals(), pkg=packageOf();
+  const wb=XLSX.utils.book_new();
+  // Request sheet
+  const req=[
+    ['TRIPLE CROWN PRODUCTS — WEBSTORE REQUEST'],
+    ['Request ID',P.id],['Status',submit?'SUBMITTED':'DRAFT EXPORT'],['Generated',new Date().toLocaleString()],[],
+    ['Package',pkg?pkg.name:''],['Item limit',pkg?pkg.itemLimit:''],['Store type',P.request.storeType],
+    ['Store name',P.request.storeName],[],
+    ['Rep',P.request.repName],['Rep email',P.request.repEmail],
+    ['Company',P.request.companyName],['Contact',P.request.contactName],
+    ['Contact email',P.request.contactEmail],['Contact phone',P.request.contactPhone],
+    ['Target launch',P.request.launchDate],['Notes',P.request.notes]
+  ];
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(req),'Request');
+  // Items sheet (flattened by color/logo)
+  const rows=[['Item #','SKU','Item name','Description','Inventoried','CS #','Color','Logo #','Deco method','COID','Item total']];
+  P.items.forEach((it,i)=>{
+    const bd=itemBreakdown(it);
+    if(it.colors.length===0){rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,'','','','',money(bd.total)]);}
+    it.colors.forEach(c=>{
+      if(c.logos.length===0){rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,c.name,'(none)','','',money(bd.total)]);}
+      c.logos.forEach((l,li)=>{const dn=(A.decoMethods.find(d=>d.id===l.deco)||{}).name||'';
+        rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,c.name,li+1,dn,l.coid,money(bd.total)]);});
+    });
+  });
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Items');
+  // Design sheet
+  const des=[['STORE DESIGN'],['Header logo',P.design.header?'Provided':'—'],['Footer logo',P.design.footer?'Provided':'—'],
+    ['Background',P.design.background?'Provided':'—'],[],['Store colors']];
+  P.design.colors.forEach(c=>des.push([c.name||'',c.hex||'']));
+  des.push([],['Note','Images travel with the saved request; attach exports from the design step as needed.']);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(des),'Design');
+  // Add-ons sheet
+  const ad=[['ADD-ON FEATURES','Selected','Cost']];
+  A.addons.forEach(a=>ad.push([a.name,P.addons[a.id]?'YES':'',money(a.cost)]));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ad),'Add-ons');
+  // Invoice sheet
+  const inv=[['SETUP INVOICE'],[pkg?pkg.name+' base':'Package base',money(t.base)],
+    ['Items & decoration',money(t.items)],['Items over limit',money(t.extraItems)],
+    ['Add-ons',money(t.addons)],['SETUP TOTAL',money(t.grand)],[],
+    ['Receipt',P.invoice.receipt?(P.invoice.receiptName||'uploaded'):'NOT UPLOADED']];
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(inv),'Invoice');
+
+  const fname=`Webstore_${(P.request.storeName||P.id).replace(/[^a-z0-9]+/gi,'_')}.xlsx`;
+  XLSX.writeFile(wb,fname);
+
+  if(submit){
+    P.status='submitted'; persist(true); renderRail();
+    const subj=encodeURIComponent(`Webstore request — ${P.request.storeName||P.id}`);
+    const body=encodeURIComponent(
+      `New webstore request from ${P.request.repName}.\n\n`+
+      `Store: ${P.request.storeName}\nCompany: ${P.request.companyName}\nPackage: ${pkg?pkg.name:''}\n`+
+      `Items: ${P.items.length}\nSetup total: ${money(t.grand)}\n\n`+
+      `The spec sheet "${fname}" downloaded to this device — please attach it to this email before sending.`);
+    const to=A.specialistEmail||'';
+    window.location.href=`mailto:${to}?subject=${subj}&body=${body}`;
+    toast('Spec sheet downloaded — attach it to the email that just opened.');
+  }else{
+    toast('Spec sheet downloaded.');
+  }
+}
+
+/* ============================== PROJECTS UI ============================== */
+function openProjects(){renderProjectList();show('ovProjects')}
+function renderProjectList(){
+  const all=projects(); const ids=Object.keys(all).sort((a,b)=>all[b].updatedAt-all[a].updatedAt);
+  const el=document.getElementById('projList');
+  el.innerHTML=(ids.length?ids.map(id=>{const p=all[id];return `<div class="proj-item">
+    <div><div class="pi-t">${esc(p.request.storeName||p.id)}</div>
+      <div class="pi-s">${esc(p.request.companyName||'—')} · updated ${new Date(p.updatedAt).toLocaleDateString()}</div></div>
+    <span class="tag ${p.status}">${p.status}</span>
+    <div class="pi-actions"><button class="btn sm" data-open="${id}">Open</button>
+      <button class="btn sm danger" data-del="${id}">Delete</button></div></div>`}).join('')
+    :'<p class="muted">No saved requests yet.</p>')+
+    `<button class="btn gold" id="plNew" style="margin-top:6px">+ New request</button>`;
+  el.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{hideAll();loadProject(b.dataset.open)});
+  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{if(confirm('Delete this request?'))deleteProject(b.dataset.del)});
+  document.getElementById('plNew').onclick=()=>{hideAll();startNew()};
+}
+function renderRecent(){
+  const all=projects(); const ids=Object.keys(all).sort((a,b)=>all[b].updatedAt-all[a].updatedAt).slice(0,4);
+  const w=document.getElementById('recentWrap');
+  if(!ids.length){w.innerHTML='';return;}
+  w.innerHTML=`<div class="eyebrow" style="margin-bottom:8px">Pick up where you left off</div>`+
+    ids.map(id=>{const p=all[id];return `<div class="proj-item">
+      <div><div class="pi-t">${esc(p.request.storeName||p.id)}</div>
+        <div class="pi-s">${esc(p.request.companyName||'—')} · ${new Date(p.updatedAt).toLocaleDateString()}</div></div>
+      <span class="tag ${p.status}">${p.status}</span>
+      <div class="pi-actions"><button class="btn sm" data-ropen="${id}">Open</button></div></div>`}).join('');
+  w.querySelectorAll('[data-ropen]').forEach(b=>b.onclick=()=>loadProject(b.dataset.ropen));
+}
+function startNew(){P=blankProject();STEP=0;enterApp()}
+
+/* ============================== ADMIN UI ============================== */
+let ADM_TAB='general';
+function openAdmin(){document.getElementById('pinInput').value='';show('ovPin');setTimeout(()=>document.getElementById('pinInput').focus(),50)}
+function renderAdmin(){
+  const A=admin();
+  const tabs=[['general','General'],['packages','Packages'],['deco','Deco methods'],['addons','Add-ons'],['cloud','Cloud sync']];
+  let body=`<div class="adm-tabs">${tabs.map(t=>`<button class="${ADM_TAB===t[0]?'on':''}" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div><div id="admPane"></div>`;
+  document.getElementById('adminBody').innerHTML=body;
+  document.querySelectorAll('#adminBody [data-tab]').forEach(b=>b.onclick=()=>{ADM_TAB=b.dataset.tab;renderAdmin()});
+  const pane=document.getElementById('admPane');
+  if(ADM_TAB==='general'){
+    pane.innerHTML=`
+      <div class="grid2">
+        <div class="field"><label>Webstore specialist email</label><input id="a_email" value="${esc(A.specialistEmail)}" placeholder="specialist@triplecrownproducts.com"></div>
+        <div class="field"><label>Admin PIN</label><input id="a_pin" value="${esc(A.pin)}"></div>
+        <div class="field"><label>Free colors per item</label><input type="number" id="a_free" value="${A.freeColorsPerItem}"></div>
+        <div class="field"><label>Cost per extra color</label><input type="number" id="a_ec" value="${A.extraColorCost}"></div>
+        <div class="field"><label>Fee per item over limit</label><input type="number" id="a_ei" value="${A.extraItemFee}"></div>
+      </div>
+      <button class="btn primary" id="a_save">Save</button>`;
+    document.getElementById('a_save').onclick=()=>{A.specialistEmail=val('a_email');A.pin=val('a_pin');
+      A.freeColorsPerItem=+val('a_free');A.extraColorCost=+val('a_ec');A.extraItemFee=+val('a_ei');saveAdmin(A);toast('Saved');if(P)refresh()};
+  }
+  if(ADM_TAB==='packages'){
+    pane.innerHTML=tableEditor('packages',[['name','Name',''],['itemLimit','Item limit','narrow'],['baseCost','Base cost','narrow']],A.packages,()=>({id:'p'+Date.now(),name:'New package',itemLimit:10,baseCost:0}));
+    wireTable('packages',A);
+  }
+  if(ADM_TAB==='deco'){
+    pane.innerHTML=`<div class="alert info">Deco cost is a flat placeholder per method today. Share your deco pricing graphs and these become tiered lookups.</div>`+
+      tableEditor('decoMethods',[['name','Method',''],['cost','Flat cost','narrow']],A.decoMethods,()=>({id:'d'+Date.now(),name:'New method',cost:0}));
+    wireTable('decoMethods',A);
+  }
+  if(ADM_TAB==='addons'){
+    pane.innerHTML=tableEditor('addons',[['name','Name',''],['desc','Description',''],['cost','Cost','narrow']],A.addons,()=>({id:'a'+Date.now(),name:'New feature',desc:'',cost:0}));
+    wireTable('addons',A);
+  }
+  if(ADM_TAB==='cloud'){
+    pane.innerHTML=`<div class="alert info">Optional. Share admin costs and the CS-number counter across all reps using a dedicated GitHub Gist. Use a <b>new, separate</b> gist for this tool.</div>
+      <div class="field"><label>Gist ID</label><input id="c_id" value="${esc(A.cloud.gistId||'')}" placeholder="gist id"></div>
+      <div class="field"><label>GitHub token</label><input id="c_tok" value="${esc(A.cloud.token||'')}" placeholder="ghp_..." type="password"></div>
+      <div style="display:flex;gap:8px"><button class="btn" id="c_save">Save config</button>
+      <button class="btn primary" id="c_push">Push settings</button><button class="btn" id="c_pull">Pull settings</button></div>
+      <p class="muted" style="font-size:12px;margin-top:10px">Push uploads admin settings + CS counter; pull overwrites local with the shared copy.</p>`;
+    document.getElementById('c_save').onclick=()=>{A.cloud.gistId=val('c_id');A.cloud.token=val('c_tok');saveAdmin(A);toast('Config saved')};
+    document.getElementById('c_push').onclick=()=>cloudPush(A);
+    document.getElementById('c_pull').onclick=()=>cloudPull(A);
+  }
+}
+function tableEditor(key,cols,rows,_){
+  return `<table class="adm"><thead><tr>${cols.map(c=>`<th class="${c[2]}">${c[1]}</th>`).join('')}<th></th></tr></thead>
+    <tbody>${rows.map((r,i)=>`<tr data-row="${i}">${cols.map(c=>`<td><input class="${c[2]}" data-k="${c[0]}" value="${esc(r[c[0]]??'')}"></td>`).join('')}<td><button class="btn sm danger" data-delrow="${i}">×</button></td></tr>`).join('')}</tbody></table>
+    <button class="btn sm iconplus" id="addRow" style="margin-top:10px">+ Add</button>
+    <button class="btn primary" id="saveRows" style="margin-top:10px;margin-left:6px">Save</button>`;
+}
+function wireTable(key,A){
+  const pane=document.getElementById('admPane');
+  pane.querySelectorAll('tr[data-row]').forEach(tr=>{const i=+tr.dataset.row;
+    tr.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;A[key][i][k]=(k==='cost'||k==='itemLimit'||k==='baseCost')?(+inp.value):inp.value});
+  });
+  pane.querySelectorAll('[data-delrow]').forEach(b=>b.onclick=()=>{A[key].splice(+b.dataset.delrow,1);saveAdmin(A);renderAdmin()});
+  document.getElementById('addRow').onclick=()=>{
+    const make={packages:()=>({id:'p'+Date.now(),name:'New package',itemLimit:10,baseCost:0}),
+      decoMethods:()=>({id:'d'+Date.now(),name:'New method',cost:0}),
+      addons:()=>({id:'a'+Date.now(),name:'New feature',desc:'',cost:0})}[key];
+    A[key].push(make());saveAdmin(A);renderAdmin();};
+  document.getElementById('saveRows').onclick=()=>{saveAdmin(A);toast('Saved');if(P)refresh()};
+}
+async function cloudPush(A){
+  if(!A.cloud.gistId||!A.cloud.token){toast('Enter gist id and token first');return;}
+  try{
+    const payload={admin:A,csCounter:Store.get('csCounter',0)};
+    const r=await fetch('https://api.github.com/gists/'+A.cloud.gistId,{method:'PATCH',
+      headers:{'Authorization':'token '+A.cloud.token,'Content-Type':'application/json'},
+      body:JSON.stringify({files:{'tcp_webstore_settings.json':{content:JSON.stringify(payload,null,2)}}})});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    toast('Settings pushed to cloud');
+  }catch(e){toast('Push failed: '+e.message)}
+}
+async function cloudPull(A){
+  if(!A.cloud.gistId||!A.cloud.token){toast('Enter gist id and token first');return;}
+  try{
+    const r=await fetch('https://api.github.com/gists/'+A.cloud.gistId,{headers:{'Authorization':'token '+A.cloud.token}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const g=await r.json();const f=g.files['tcp_webstore_settings.json'];if(!f)throw new Error('no settings file');
+    const data=JSON.parse(f.content);
+    if(data.admin){data.admin.cloud=A.cloud;saveAdmin(data.admin);}
+    if(typeof data.csCounter==='number')Store.set('csCounter',data.csCounter);
+    toast('Settings pulled');renderAdmin();if(P)refresh();
+  }catch(e){toast('Pull failed: '+e.message)}
+}
+
+/* ============================== HELPERS ============================== */
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function val(id){return document.getElementById(id).value}
+function optList(pairs,sel,ph){let o=ph?`<option value="">${ph}</option>`:'';return o+pairs.map(p=>`<option value="${esc(p[0])}" ${p[0]==sel?'selected':''}>${esc(p[1])}</option>`).join('')}
+const COLORMAP={black:'#1b1b1b',white:'#f4f4f4',navy:'#1f2a4d',royal:'#224C98',red:'#b3252b',maroon:'#6a1f2b',green:'#2e6b3f',forest:'#244f31',kelly:'#2e8b57',gold:'#caa033',yellow:'#e8c537',orange:'#d4711f',purple:'#5a3a8a',pink:'#d96aa0',gray:'#8a8f98',grey:'#8a8f98',charcoal:'#3a3f47',silver:'#c8ccd1',brown:'#6b4a2b',tan:'#c9b18a',cardinal:'#a01f2b',carolina:'#7ba6d6',teal:'#1f6f7a',lime:'#9bbf3a',burgundy:'#5a1f2b'};
+function guessHex(name){const n=String(name||'').toLowerCase();for(const k in COLORMAP){if(n.includes(k))return COLORMAP[k]}return '#9AA0AB'}
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600)}
+function show(id){document.getElementById(id).classList.add('show')}
+function hideAll(){document.querySelectorAll('.overlay').forEach(o=>o.classList.remove('show'))}
+
+/* ============================== EVENTS ============================== */
+document.getElementById('btnNew').onclick=startNew;
+document.getElementById('btnOpenExisting').onclick=openProjects;
+document.getElementById('btnProjects').onclick=openProjects;
+document.getElementById('btnAdmin').onclick=openAdmin;
+document.getElementById('navBack').onclick=()=>{if(STEP>0){STEP--;renderRail();renderStep()}};
+document.getElementById('navNext').onclick=()=>{if(STEP<STEPS.length-1){STEP++;renderRail();renderStep()}};
+document.getElementById('navSave').onclick=()=>persist(false);
+document.getElementById('pinGo').onclick=()=>{if(val('pinInput')===admin().pin){hideAll();ADM_TAB='general';renderAdmin();show('ovAdmin')}else toast('Wrong PIN')};
+document.getElementById('pinInput').onkeydown=e=>{if(e.key==='Enter')document.getElementById('pinGo').click()};
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=hideAll);
+document.querySelectorAll('.overlay').forEach(o=>o.onclick=e=>{if(e.target===o)hideAll()});
+
+/* boot */
+renderRecent();
+</script>
+</body>
+</html>
