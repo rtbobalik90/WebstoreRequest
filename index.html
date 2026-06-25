@@ -334,6 +334,25 @@ const DEFAULT_ADMIN={
   ],
   storeTypes:['Team / Organization','Corporate','Fundraiser','Event / One-time','School','Other'],
   placements:['Left Chest','Right Chest','Full Front','Full Back','Left Sleeve','Right Sleeve','Pocket','Yoke','Hood','Cap Front','Cap Back'],
+  colors:[
+    {name:'White',hex:'#FFFFFF'},{name:'Ash',hex:'#C9CCCE'},{name:'Athletic Heather',hex:'#C7C9C7'},
+    {name:'Azalea',hex:'#F4A7C3'},{name:'Black',hex:'#1B1B1B'},{name:'Black Heather',hex:'#2B2B2D'},
+    {name:'Burnt Orange',hex:'#B0532A'},{name:'California Blue',hex:'#3A7DC0'},{name:'Cardinal',hex:'#8C1D2C'},
+    {name:'Charcoal Grey',hex:'#4A4D52'},{name:'Chocolate',hex:'#4A352A'},{name:'Classic Pink',hex:'#E98FB5'},
+    {name:'Columbia Blue',hex:'#9BC4E2'},{name:'Cool Mint',hex:'#BFE3D0'},{name:'Crimson',hex:'#9E1B32'},
+    {name:'Cyber Pink',hex:'#E45FA0'},{name:'Deep Purple',hex:'#4B2E83'},{name:'Forest Green',hex:'#1F4D2E'},
+    {name:'Gold',hex:'#C9A227'},{name:'Golden Pecan',hex:'#C99A52'},{name:'Irish Green Heather',hex:'#2E7D46'},
+    {name:'Island Yellow',hex:'#F2E06B'},{name:'J. Navy',hex:'#1B2A4A'},{name:'Jade',hex:'#3AA08A'},
+    {name:'Kelly',hex:'#2E8B57'},{name:'Khaki',hex:'#BBA46B'},{name:'Kiwi',hex:'#8FBF4D'},
+    {name:'Light Blue',hex:'#A9CCE3'},{name:'Maroon',hex:'#5E1A2B'},{name:'Military Green',hex:'#4B5320'},
+    {name:'Neon Pink',hex:'#FF4FA3'},{name:'Neon Yellow',hex:'#E6F23B'},{name:'Neon Green',hex:'#39C24A'},
+    {name:'Oxford',hex:'#5A5E63'},{name:'Royal',hex:'#1D4BA1'},{name:'Safety Green',hex:'#C6E300'},
+    {name:'Safety Orange',hex:'#FF7000'},{name:'Sandstone',hex:'#D8C3A5'},{name:'Scuba Blue',hex:'#2FB5C4'},
+    {name:'Silver',hex:'#D6D9DC'},{name:'Tennessee Orange',hex:'#E07A2F'},{name:'Texas Orange',hex:'#C45A24'},
+    {name:'True Red',hex:'#C8102E'},{name:'Vintage Heather Blue',hex:'#6E89A8'},{name:'Vintage Heather Maroon',hex:'#6E3A45'},
+    {name:'Vintage Heather Navy',hex:'#3A4760'},{name:'Vintage Heather Red',hex:'#A85059'},{name:'Violet',hex:'#6A4C9C'},
+    {name:'Clay',hex:'#B07A5A'},{name:'Rock',hex:'#8A8D8F'},{name:'Aquatic Blue',hex:'#4FA3C7'}
+  ],
   cloud:{gistId:'',token:''}
 };
 function admin(){const a=Store.get('admin');return a?Object.assign({},DEFAULT_ADMIN,a):JSON.parse(JSON.stringify(DEFAULT_ADMIN))}
@@ -418,7 +437,7 @@ function migrate(p){
 function luminance(hex){hex=String(hex||'#888').replace('#','');if(hex.length===3)hex=hex.split('').map(x=>x+x).join('');
   const r=parseInt(hex.slice(0,2),16)/255,g=parseInt(hex.slice(2,4),16)/255,b=parseInt(hex.slice(4,6),16)/255;
   return 0.2126*r+0.7152*g+0.0722*b;}
-function colorIsDark(c){if(c.tone==='dark')return true;if(c.tone==='light')return false;return luminance(c.hex||guessHex(c.name))<0.5;}
+function colorIsDark(c){if(c.tone==='dark')return true;if(c.tone==='light')return false;return luminance(hexForColor(c.name))<0.5;}
 function cwLabel(cw){return cw.type==='color'?(cw.color||'Color'):(cw.type==='dark'?'Dark garments':'Light garments');}
 function logoLabel(def){return def.name?def.name:((def.coid||'logo')+' · '+cwLabel(def.colorway)+(def.placement?' · '+def.placement:''));}
 function resolveLogo(decoId,c){
@@ -700,13 +719,13 @@ function colorChips(it){
   const pool=it.pulledColors.length?it.pulledColors:it.colors.map(c=>c.name);
   return [...new Set(pool)].map(nm=>{
     const on=names.has(nm.toLowerCase());
-    return `<span class="chip ${on?'on':''}" data-color="${esc(nm)}"><span class="sw" style="background:${guessHex(nm)}"></span>${esc(nm)}</span>`;
+    return `<span class="chip ${on?'on':''}" data-color="${esc(nm)}"><span class="sw" style="background:${hexForColor(nm)}"></span>${esc(nm)}</span>`;
   }).join('');
 }
 function colorBlockHTML(it,c){
   const dark=colorIsDark(c);
   return `<div class="color-block" data-cb="${esc(c.name)}">
-    <div class="cbh"><span class="sw" style="background:${c.hex||guessHex(c.name)}"></span><b>${esc(c.name)}</b>
+    <div class="cbh"><span class="sw" style="background:${hexForColor(c.name)}"></span><b>${esc(c.name)}</b>
       <span class="tone-toggle" data-tone>
         <button class="${c.tone==='auto'?'on':''}" data-set="auto">Auto (${dark?'dark':'light'})</button>
         <button class="${c.tone==='light'?'on':''}" data-set="light">Light</button>
@@ -717,7 +736,7 @@ function colorBlockHTML(it,c){
   </div>`;
 }
 function logoInstHTML(it,c,l,li){
-  const A=admin(); const gh=c.hex||guessHex(c.name);
+  const A=admin(); const gh=hexForColor(c.name);
   const pool=(P.logos&&P.logos[l.deco])||[];
   return `<div class="logo-inst" data-li="${li}">
     <div class="prev" style="background:${gh}">${l.image?`<img src="${esc(l.image)}">`:'<span class="ph">no art</span>'}</div>
@@ -787,7 +806,7 @@ function toggleColor(it,name,force){
   const idx=it.colors.findIndex(c=>c.name.toLowerCase()===name.toLowerCase());
   if(idx>=0 && !force){it.colors.splice(idx,1);return;}
   if(idx<0){
-    const c={name,hex:guessHex(name),tone:'auto',logos:[]};
+    const c={name,hex:hexForColor(name),tone:'auto',logos:[]};
     const def=resolveLogo(P.defaultDeco,c);
     c.logos.push(instanceFromDef(def,P.defaultDeco));
     it.colors.push(c);
@@ -1044,7 +1063,7 @@ let ADM_TAB='general';
 function openAdmin(){document.getElementById('pinInput').value='';show('ovPin');setTimeout(()=>document.getElementById('pinInput').focus(),50)}
 function renderAdmin(){
   const A=admin();
-  const tabs=[['general','General'],['packages','Packages'],['deco','Deco methods'],['addons','Add-ons'],['cloud','Cloud sync']];
+  const tabs=[['general','General'],['colors','Colors'],['packages','Packages'],['deco','Deco methods'],['addons','Add-ons'],['cloud','Cloud sync']];
   let body=`<div class="adm-tabs">${tabs.map(t=>`<button class="${ADM_TAB===t[0]?'on':''}" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div><div id="admPane"></div>`;
   document.getElementById('adminBody').innerHTML=body;
   document.querySelectorAll('#adminBody [data-tab]').forEach(b=>b.onclick=()=>{ADM_TAB=b.dataset.tab;renderAdmin()});
@@ -1065,6 +1084,47 @@ function renderAdmin(){
     document.getElementById('a_save').onclick=()=>{A.specialistEmail=val('a_email');A.pin=val('a_pin');
       A.freeColorsPerItem=+val('a_free');A.extraColorCost=+val('a_ec');A.extraItemFee=+val('a_ei');
       Store.set('apiKey',val('a_key'));saveAdmin(A);toast('Saved');if(P)refresh()};
+  }
+  if(ADM_TAB==='colors'){
+    pane.innerHTML=`<div class="alert info">These hex values drive the color swatches reps see when selecting garment colors. Fix any that look off and it updates everywhere. Syncs to all reps via cloud.</div>
+      <table class="adm"><thead><tr><th>Swatch</th><th>Color name</th><th>Hex</th><th></th></tr></thead>
+      <tbody>${(A.colors||[]).map((c,i)=>`<tr data-row="${i}">
+        <td><input type="color" data-cpick value="${/^#([0-9a-f]{6})$/i.test(c.hex||'')?c.hex:'#888888'}" style="width:42px;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none"></td>
+        <td><input data-cname value="${esc(c.name)}"></td>
+        <td><input data-chex class="narrow" value="${esc(c.hex||'')}"></td>
+        <td><button class="btn sm danger" data-delrow="${i}">×</button></td></tr>`).join('')}</tbody></table>
+      <button class="btn sm iconplus" id="addColorRow" style="margin-top:10px">+ Add color</button>
+      <button class="btn primary" id="saveColors" style="margin-top:10px;margin-left:6px">Save</button>
+      <div style="border-top:1px solid var(--line);margin-top:18px;padding-top:14px">
+        <h3 style="margin:0 0 4px;font-size:14px">Bulk import</h3>
+        <p class="hint" style="margin:0 0 10px">Upload a .csv/.xlsx with <b>Name</b> and <b>Hex</b> columns, or paste lines like <code>Royal, #1D4BA1</code>. Existing names get updated; new ones get added.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+          <button class="btn sm" id="colUpload">Upload .csv / .xlsx</button>
+          <button class="btn sm" id="colDownload">Download current as CSV</button>
+          <label class="checkbox" style="font-size:12px"><input type="checkbox" id="colReplace"> Replace entire list</label>
+        </div>
+        <textarea id="colPaste" placeholder="Royal, #1D4BA1&#10;Safety Green, #C6E300&#10;Sandstone, #D8C3A5" style="width:100%;min-height:96px;border:1px solid var(--line);border-radius:8px;padding:8px"></textarea>
+        <button class="btn sm primary" id="colPasteImport" style="margin-top:8px">Import pasted colors</button>
+      </div>`;
+    pane.querySelectorAll('tr[data-row]').forEach(tr=>{const i=+tr.dataset.row;
+      const pick=tr.querySelector('[data-cpick]'),name=tr.querySelector('[data-cname]'),hex=tr.querySelector('[data-chex]');
+      pick.oninput=()=>{A.colors[i].hex=pick.value;hex.value=pick.value;saveAdmin(A)};
+      hex.oninput=()=>{A.colors[i].hex=hex.value;if(/^#([0-9a-f]{6})$/i.test(hex.value))pick.value=hex.value;saveAdmin(A)};
+      name.oninput=()=>{A.colors[i].name=name.value;saveAdmin(A)};
+    });
+    pane.querySelectorAll('[data-delrow]').forEach(b=>b.onclick=()=>{A.colors.splice(+b.dataset.delrow,1);saveAdmin(A);renderAdmin()});
+    document.getElementById('addColorRow').onclick=()=>{A.colors.push({name:'New color',hex:'#888888'});saveAdmin(A);renderAdmin()};
+    document.getElementById('saveColors').onclick=()=>{saveAdmin(A);toast('Saved');if(P)refresh()};
+    const doImport=(cells)=>{const list=colorCellsToList(cells);if(!list.length){toast('No colors found — check the columns');return;}
+      mergeColorList(list,document.getElementById('colReplace').checked);renderAdmin();toast('Imported '+list.length+' colors');if(P)refresh();};
+    document.getElementById('colPasteImport').onclick=()=>doImport(parseDelimited(document.getElementById('colPaste').value));
+    document.getElementById('colUpload').onclick=()=>{const f=document.createElement('input');f.type='file';f.accept='.csv,.tsv,.xlsx,.xls';
+      f.onchange=e=>{const file=e.target.files[0];if(!file)return;const ext=(file.name.split('.').pop()||'').toLowerCase();const fr=new FileReader();
+        if(ext==='xlsx'||ext==='xls'){fr.onload=()=>{try{const wb=XLSX.read(fr.result,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];doImport(XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false}));}catch(err){toast('Could not read that file')}};fr.readAsArrayBuffer(file);}
+        else{fr.onload=()=>doImport(parseDelimited(fr.result));fr.readAsText(file);}
+      };f.click();};
+    document.getElementById('colDownload').onclick=()=>{const csv='Name,Hex\n'+(admin().colors||[]).map(c=>`"${String(c.name||'').replace(/"/g,'""')}",${c.hex||''}`).join('\n');
+      const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='tcp_colors.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
   }
   if(ADM_TAB==='packages'){
     pane.innerHTML=tableEditor('packages',[['name','Name',''],['itemLimit','Item limit','narrow'],['baseCost','Base cost','narrow']],A.packages,()=>({id:'p'+Date.now(),name:'New package',itemLimit:10,baseCost:0}));
@@ -1141,6 +1201,32 @@ function val(id){return document.getElementById(id).value}
 function optList(pairs,sel,ph){let o=ph?`<option value="">${ph}</option>`:'';return o+pairs.map(p=>`<option value="${esc(p[0])}" ${p[0]==sel?'selected':''}>${esc(p[1])}</option>`).join('')}
 const COLORMAP={black:'#1b1b1b',white:'#f4f4f4',navy:'#1f2a4d',royal:'#224C98',red:'#b3252b',maroon:'#6a1f2b',green:'#2e6b3f',forest:'#244f31',kelly:'#2e8b57',gold:'#caa033',yellow:'#e8c537',orange:'#d4711f',purple:'#5a3a8a',pink:'#d96aa0',gray:'#8a8f98',grey:'#8a8f98',charcoal:'#3a3f47',silver:'#c8ccd1',brown:'#6b4a2b',tan:'#c9b18a',cardinal:'#a01f2b',carolina:'#7ba6d6',teal:'#1f6f7a',lime:'#9bbf3a',burgundy:'#5a1f2b'};
 function guessHex(name){const n=String(name||'').toLowerCase();for(const k in COLORMAP){if(n.includes(k))return COLORMAP[k]}return '#9AA0AB'}
+function hexForColor(name){const n=String(name||'').trim().toLowerCase();const m=(admin().colors||[]).find(c=>c.name.toLowerCase()===n);return (m&&m.hex)?m.hex:guessHex(name);}
+function normHex(h){h=String(h||'').trim();if(!h)return '';if(h[0]!=='#')h='#'+h;
+  if(/^#[0-9a-fA-F]{3}$/.test(h))h='#'+h.slice(1).split('').map(c=>c+c).join('');
+  return /^#[0-9a-fA-F]{6}$/.test(h)?h.toUpperCase():'';}
+function parseDelimited(text){return String(text||'').split(/\r?\n/).filter(l=>l.trim()).map(l=>l.split(/[,\t]/).map(c=>c.trim().replace(/^"|"$/g,'')));}
+function colorCellsToList(cells){
+  if(!cells||!cells.length)return [];
+  let start=0,nameIdx=0,hexIdx=1;
+  const h=(cells[0]||[]).map(x=>String(x||'').toLowerCase());
+  if(h.some(x=>/hex|code/.test(x))||h.some(x=>/name|colou?r/.test(x))){
+    const hi=h.findIndex(x=>/hex|code/.test(x));
+    const ni=h.findIndex(x=>/name|colou?r/.test(x)&&!/hex|code/.test(x));
+    if(hi>=0)hexIdx=hi; if(ni>=0)nameIdx=ni; start=1;
+  }
+  const out=[];
+  for(let r=start;r<cells.length;r++){const row=cells[r];if(!row)continue;
+    const name=String(row[nameIdx]==null?'':row[nameIdx]).trim(); if(!name)continue;
+    const hex=normHex(row[hexIdx])||guessHex(name);
+    out.push({name,hex});
+  }
+  return out;
+}
+function mergeColorList(incoming,replace){const A=admin();
+  if(replace){A.colors=incoming;}
+  else{incoming.forEach(c=>{const ex=(A.colors||[]).find(x=>x.name.toLowerCase()===c.name.toLowerCase());if(ex)ex.hex=c.hex;else A.colors.push(c);});}
+  saveAdmin(A);}
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600)}
 function show(id){document.getElementById(id).classList.add('show')}
 function hideAll(){document.querySelectorAll('.overlay').forEach(o=>o.classList.remove('show'))}
