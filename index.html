@@ -804,14 +804,15 @@ async function pullProduct(it,i){
     const key=Store.get('apiKey','');
     const headers={"Content-Type":"application/json"};
     if(key){headers["x-api-key"]=key;headers["anthropic-version"]="2023-06-01";headers["anthropic-dangerous-direct-browser-access"]="true";}
+    headers["anthropic-beta"]="web-fetch-2025-09-10";
     const prompt=
-      `Open this Triple Crown Products product page and extract its details: ${it.url}\n`+
-      `Use web_fetch to load that exact URL and read the page HTML, including the <meta property="og:image"> tag for the main product image.\n`+
+      `Get the product details from this Triple Crown Products page: ${it.url}\n`+
+      `First try web_fetch to open that exact URL and read the page HTML (including the <meta property="og:image"> tag for the main image). If web_fetch is unavailable or fails, use web_search to find the product instead.\n`+
       `Return ONLY a raw JSON object, no markdown, no commentary, with keys: `+
       `"sku" (string), "name" (string), "description" (string, max 200 chars), `+
       `"colors" (array of color name strings offered for this product), `+
-      `"imageUrl" (the direct URL of the main product image — og:image or the primary product photo — else ""). `+
-      `If you cannot find it, return {"error":"not found"}.`;
+      `"imageUrl" (the direct URL of the main product image, or ""). `+
+      `Fill any field you can find; use "" or [] for anything you cannot. Only return {"error":"not found"} if you cannot identify the product at all.`;
     const post=tools=>fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,
       body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1200,tools,messages:[{role:"user",content:prompt}]})});
     const wf={type:"web_fetch_20250910",name:"web_fetch",max_uses:3};
