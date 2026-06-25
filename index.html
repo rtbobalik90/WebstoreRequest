@@ -607,8 +607,11 @@ async function pullProduct(it,i){
   if(!it.url.trim()){msg.innerHTML=`<div class="alert warn">Paste a product link first, or fill the fields manually below.</div>`;return;}
   msg.innerHTML=`<div class="alert info">Pulling product details…</div>`;
   try{
+    const key=Store.get('apiKey','');
+    const headers={"Content-Type":"application/json"};
+    if(key){headers["x-api-key"]=key;headers["anthropic-version"]="2023-06-01";headers["anthropic-dangerous-direct-browser-access"]="true";}
     const res=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",headers:{"Content-Type":"application/json"},
+      method:"POST",headers,
       body:JSON.stringify({
         model:"claude-sonnet-4-6",max_tokens:1000,
         tools:[{type:"web_search_20250305",name:"web_search"}],
@@ -621,6 +624,11 @@ async function pullProduct(it,i){
       })
     });
     const data=await res.json();
+    if(!res.ok||(data&&data.type==='error')){
+      const code=res.status;
+      msg.innerHTML=`<div class="alert warn">${code===401||code===403?'Pull rejected — add a valid API key in <b>Admin → General</b>.':'Pull failed ('+esc((data&&data.error&&data.error.message)||('HTTP '+code))+'). Enter the fields manually below.'}</div>`;
+      return;
+    }
     const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
     const json=extractJSON(text);
     if(!json||json.error){msg.innerHTML=`<div class="alert warn">Couldn't pull this one automatically. Fill the fields manually below — colors can be added by hand.</div>`;return;}
@@ -846,13 +854,17 @@ function renderAdmin(){
       <div class="grid2">
         <div class="field"><label>Webstore specialist email</label><input id="a_email" value="${esc(A.specialistEmail)}" placeholder="specialist@triplecrownproducts.com"></div>
         <div class="field"><label>Admin PIN</label><input id="a_pin" value="${esc(A.pin)}"></div>
+        <div class="field" style="grid-column:1/-1"><label>Anthropic API key — this device only</label>
+          <input id="a_key" type="password" value="${esc(Store.get('apiKey',''))}" placeholder="sk-ant-...">
+          <small>Saved only in this browser. <b>Do not paste it into the HTML or commit it to GitHub</b> — leaked keys get auto-disabled. Each rep enters their own here.</small></div>
         <div class="field"><label>Free colors per item</label><input type="number" id="a_free" value="${A.freeColorsPerItem}"></div>
         <div class="field"><label>Cost per extra color</label><input type="number" id="a_ec" value="${A.extraColorCost}"></div>
         <div class="field"><label>Fee per item over limit</label><input type="number" id="a_ei" value="${A.extraItemFee}"></div>
       </div>
       <button class="btn primary" id="a_save">Save</button>`;
     document.getElementById('a_save').onclick=()=>{A.specialistEmail=val('a_email');A.pin=val('a_pin');
-      A.freeColorsPerItem=+val('a_free');A.extraColorCost=+val('a_ec');A.extraItemFee=+val('a_ei');saveAdmin(A);toast('Saved');if(P)refresh()};
+      A.freeColorsPerItem=+val('a_free');A.extraColorCost=+val('a_ec');A.extraItemFee=+val('a_ei');
+      Store.set('apiKey',val('a_key'));saveAdmin(A);toast('Saved');if(P)refresh()};
   }
   if(ADM_TAB==='packages'){
     pane.innerHTML=tableEditor('packages',[['name','Name',''],['itemLimit','Item limit','narrow'],['baseCost','Base cost','narrow']],A.packages,()=>({id:'p'+Date.now(),name:'New package',itemLimit:10,baseCost:0}));
