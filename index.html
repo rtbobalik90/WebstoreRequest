@@ -400,6 +400,10 @@ function deleteProject(id){const all=projects();delete all[id];Store.set('projec
 function migrate(p){
   if(!p.logos)p.logos={};
   if(!p.defaultDeco)p.defaultDeco=(admin().decoMethods[0]||{}).id||'emb';
+  Object.keys(p.logos).forEach(k=>{(p.logos[k]||[]).forEach(lg=>{
+    if(lg.name===undefined)lg.name='';
+    if(!lg.colorway)lg.colorway={type:'light',color:''};
+  });});
   (p.items||[]).forEach(it=>{
     if(it.imageUrl===undefined)it.imageUrl='';
     if(it.imageData===undefined)it.imageData=null;
@@ -416,7 +420,7 @@ function luminance(hex){hex=String(hex||'#888').replace('#','');if(hex.length===
   return 0.2126*r+0.7152*g+0.0722*b;}
 function colorIsDark(c){if(c.tone==='dark')return true;if(c.tone==='light')return false;return luminance(c.hex||guessHex(c.name))<0.5;}
 function cwLabel(cw){return cw.type==='color'?(cw.color||'Color'):(cw.type==='dark'?'Dark garments':'Light garments');}
-function logoLabel(def){return (def.coid||'logo')+' · '+cwLabel(def.colorway)+(def.placement?' · '+def.placement:'');}
+function logoLabel(def){return def.name?def.name:((def.coid||'logo')+' · '+cwLabel(def.colorway)+(def.placement?' · '+def.placement:''));}
 function resolveLogo(decoId,c){
   const pool=(P.logos&&P.logos[decoId])||[]; if(!pool.length)return null;
   let m=pool.find(l=>l.colorway.type==='color'&&l.colorway.color&&l.colorway.color.toLowerCase()===c.name.toLowerCase());
@@ -428,10 +432,15 @@ function instanceFromDef(def,decoId){
   if(!def)return {id:lid(),deco:decoId||P.defaultDeco||'',logoId:'',coid:'',placement:'',w:'',h:'',image:null};
   return {id:lid(),deco:decoId,logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image};
 }
-function knockoutWhite(dataURL,cb,thresh=238){const img=new Image();img.onload=()=>{
+function removeBg(dataURL,cb,tol=64){const img=new Image();img.onload=()=>{
   const cv=document.createElement('canvas');cv.width=img.width;cv.height=img.height;const x=cv.getContext('2d');
-  x.drawImage(img,0,0);const d=x.getImageData(0,0,cv.width,cv.height),p=d.data;
-  for(let i=0;i<p.length;i+=4){if(p[i]>=thresh&&p[i+1]>=thresh&&p[i+2]>=thresh)p[i+3]=0;}
+  x.drawImage(img,0,0);const d=x.getImageData(0,0,cv.width,cv.height),p=d.data,w=cv.width,h=cv.height;
+  const corners=[[0,0],[w-1,0],[0,h-1],[w-1,h-1]].map(([cx,cy])=>{const i=(cy*w+cx)*4;return [p[i],p[i+1],p[i+2]];});
+  const bg=[0,1,2].map(k=>Math.round(corners.reduce((s,c)=>s+c[k],0)/corners.length));
+  for(let i=0;i<p.length;i+=4){
+    const dist=Math.sqrt((p[i]-bg[0])**2+(p[i+1]-bg[1])**2+(p[i+2]-bg[2])**2);
+    if(dist<=tol)p[i+3]=0;
+  }
   x.putImageData(d,0,0);cb(cv.toDataURL('image/png'));};img.onerror=()=>cb(dataURL);img.src=dataURL;}
 
 /* ============================== PRICING ============================== */
@@ -465,7 +474,7 @@ function enterApp(){
   document.getElementById('footnav').classList.remove('hidden');
   document.getElementById('projPill').style.display='flex';
   document.getElementById('topTotal').style.display='flex';
-  renderRail(); renderStep(); persist(true);
+  renderRail(); renderStep(true); persist(true);
 }
 function renderRail(){
   const rail=document.getElementById('rail');
@@ -479,7 +488,7 @@ function renderRail(){
       <button class="btn sm" id="railProjects">All requests</button>
       <button class="btn sm ghost" id="railNew">+ New request</button>
     </div>`;
-  rail.querySelectorAll('.step').forEach(el=>el.onclick=()=>{STEP=+el.dataset.step;renderRail();renderStep()});
+  rail.querySelectorAll('.step').forEach(el=>el.onclick=()=>{STEP=+el.dataset.step;renderRail();renderStep(true)});
   document.getElementById('railProjects').onclick=openProjects;
   document.getElementById('railNew').onclick=startNew;
   document.getElementById('projName').textContent=P.request.storeName||P.id;
@@ -490,10 +499,11 @@ function renderRail(){
   const next=document.getElementById('navNext');
   if(STEP===STEPS.length-1){next.textContent='Review & submit ↓';}else{next.textContent='Next →';}
 }
-function renderStep(){
+function renderStep(toTop){
   const m=document.getElementById('main');
+  const y=window.scrollY;
   [renderRequest,renderLogos,renderItems,renderDesign,renderAddons,renderInvoice][STEP](m);
-  window.scrollTo({top:0,behavior:'smooth'});
+  if(toTop)window.scrollTo({top:0,behavior:'smooth'}); else window.scrollTo(0,y);
 }
 function refresh(){renderRail();persist(true)}
 
@@ -572,7 +582,7 @@ function renderLogos(m){
   document.getElementById('defDeco').onchange=e=>{P.defaultDeco=e.target.value;refresh()};
   m.querySelectorAll('[data-deco]').forEach(sec=>{
     const decoId=sec.dataset.deco; P.logos[decoId]=P.logos[decoId]||[];
-    sec.querySelector('[data-act="addlogo"]').onclick=()=>{P.logos[decoId].push({id:lid(),image:null,coid:'',w:'',h:'',placement:'',colorway:{type:'light',color:''}});refresh();renderStep()};
+    sec.querySelector('[data-act="addlogo"]').onclick=()=>{P.logos[decoId].push({id:lid(),name:'',image:null,coid:'',w:'',h:'',placement:'',colorway:{type:'light',color:''}});refresh();renderStep()};
     sec.querySelectorAll('.logo-def').forEach(def=>{
       const li=+def.dataset.li, lg=P.logos[decoId][li]; if(!lg)return;
       def.querySelectorAll('[data-k]').forEach(inp=>{const k=inp.dataset.k;
@@ -585,7 +595,7 @@ function renderLogos(m){
       def.querySelector('[data-act="img"]').onclick=()=>{const f=document.createElement('input');f.type='file';f.accept='image/*';
         f.onchange=e=>{const file=e.target.files[0];if(!file)return;downscale(file,d=>{lg.image=d;refresh();renderStep();},700,.92)};f.click();};
       def.querySelector('[data-act="dellogo"]').onclick=()=>{P.logos[decoId].splice(li,1);refresh();renderStep()};
-      const kn=def.querySelector('[data-act="knock"]');if(kn)kn.onclick=()=>knockoutWhite(lg.image,d=>{lg.image=d;refresh();renderStep()});
+      const kn=def.querySelector('[data-act="knock"]');if(kn)kn.onclick=()=>removeBg(lg.image,d=>{lg.image=d;refresh();renderStep()});
     });
   });
 }
@@ -604,6 +614,7 @@ function logoDefHTML(lg,li){
   return `<div class="logo-def" data-li="${li}">
     <div class="ld-img" data-act="img">${lg.image?`<img src="${lg.image}">`:'<span class="ph">📤 Upload<br>logo</span>'}</div>
     <div class="ld-fields">
+      <div class="ld-row"><div class="fld"><label>Logo name</label><input data-k="name" value="${esc(lg.name||'')}" placeholder="e.g. Equipped Coffee"></div></div>
       <div class="ld-row">
         <div class="fld"><label>COID</label><input data-k="coid" value="${esc(lg.coid)}" placeholder="COID"></div>
         <div class="fld xs"><label>W in</label><input data-k="w" type="number" step="0.25" value="${esc(lg.w)}"></div>
@@ -618,7 +629,7 @@ function logoDefHTML(lg,li){
         <div class="fld ${lg.colorway.type==='color'?'':'hidden'}" data-cwcolor><label>Color</label>
           <input data-k="cwcolor" list="stdcolors" value="${esc(lg.colorway.color||'')}" placeholder="Black"></div>
       </div>
-      ${lg.image?'<button class="btn sm" data-act="knock" style="margin-top:2px">Knock out white background</button>':''}
+      ${lg.image?'<button class="btn sm" data-act="knock" style="margin-top:2px">Remove background</button>':''}
     </div>
     <button class="xbtn" data-act="dellogo" title="Remove logo">×</button>
   </div>`;
@@ -656,7 +667,7 @@ function itemCardHTML(it,i){
       </div>
       <div data-pullmsg></div>
       <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-        <div class="prod-img" data-act="prodimg">${(it.imageData||it.imageUrl)?`<img src="${esc(it.imageData||it.imageUrl)}">`:'<span class="ph">📷 Product image<br><small>pulled or click to upload</small></span>'}</div>
+        <div class="prod-img" data-act="prodimg">${(it.imageData||it.imageUrl)?`<img src="${esc(it.imageData||it.imageUrl)}" onerror="this.outerHTML='<span class=ph>📷 Click to upload</span>'">`:'<span class="ph">📷 Product image<br><small>pulled or click to upload</small></span>'}</div>
         <div class="grid3" style="flex:1;min-width:260px">
           <div class="field"><label>SKU</label><input data-f="sku" value="${esc(it.sku)}"></div>
           <div class="field"><label>Item name</label><input data-f="name" value="${esc(it.name)}"></div>
@@ -762,7 +773,7 @@ function wireItem(it,i){
       row.querySelectorAll('[data-l]').forEach(el=>{
         el.oninput=el.onchange=()=>{const k=el.dataset.l;
           if(k==='deco'){l.deco=el.value;const def=resolveLogo(el.value,c);if(def)Object.assign(l,{logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image});else l.logoId='';refresh();renderStep();return;}
-          if(k==='logoId'){const def=(P.logos[l.deco]||[]).find(x=>x.id===el.value);if(def)Object.assign(l,{logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image});else l.logoId='';refresh();renderStep();return;}
+          if(k==='logoId'){const def=(P.logos[l.deco]||[]).find(x=>x.id===el.value);if(def)Object.assign(l,{logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image});else Object.assign(l,{logoId:'',coid:'',placement:'',w:'',h:'',image:null});refresh();renderStep();return;}
           l[k]=el.value;refresh();};
       });
       row.querySelector('[data-act="dellogo"]').onclick=()=>{c.logos.splice(li,1);refresh();renderStep()};
@@ -793,21 +804,20 @@ async function pullProduct(it,i){
     const key=Store.get('apiKey','');
     const headers={"Content-Type":"application/json"};
     if(key){headers["x-api-key"]=key;headers["anthropic-version"]="2023-06-01";headers["anthropic-dangerous-direct-browser-access"]="true";}
-    const res=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",headers,
-      body:JSON.stringify({
-        model:"claude-sonnet-4-6",max_tokens:1000,
-        tools:[{type:"web_search_20250305",name:"web_search"}],
-        messages:[{role:"user",content:
-          `Look up this Triple Crown Products product page and extract its details: ${it.url}\n`+
-          `Return ONLY a raw JSON object, no markdown, no commentary, with keys: `+
-          `"sku" (string), "name" (string), "description" (string, max 200 chars), `+
-          `"colors" (array of color name strings offered for this product), `+
-          `"imageUrl" (string, a direct URL to the product's main image if you can find one, else ""). `+
-          `If you cannot find it, return {"error":"not found"}.`}]
-      })
-    });
-    const data=await res.json();
+    const prompt=
+      `Open this Triple Crown Products product page and extract its details: ${it.url}\n`+
+      `Use web_fetch to load that exact URL and read the page HTML, including the <meta property="og:image"> tag for the main product image.\n`+
+      `Return ONLY a raw JSON object, no markdown, no commentary, with keys: `+
+      `"sku" (string), "name" (string), "description" (string, max 200 chars), `+
+      `"colors" (array of color name strings offered for this product), `+
+      `"imageUrl" (the direct URL of the main product image — og:image or the primary product photo — else ""). `+
+      `If you cannot find it, return {"error":"not found"}.`;
+    const post=tools=>fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1200,tools,messages:[{role:"user",content:prompt}]})});
+    const wf={type:"web_fetch_20250910",name:"web_fetch",max_uses:3};
+    const ws={type:"web_search_20250305",name:"web_search"};
+    let res=await post([wf,ws]); let data=await res.json();
+    if(!res.ok){res=await post([ws]); data=await res.json();}   // retry without web_fetch if unsupported
     if(!res.ok||(data&&data.type==='error')){
       const code=res.status;
       msg.innerHTML=`<div class="alert warn">${code===401||code===403?'Pull rejected — add a valid API key in <b>Admin → General</b>.':'Pull failed ('+esc((data&&data.error&&data.error.message)||('HTTP '+code))+'). Enter the fields manually below.'}</div>`;
@@ -1137,8 +1147,8 @@ document.getElementById('btnNew').onclick=startNew;
 document.getElementById('btnOpenExisting').onclick=openProjects;
 document.getElementById('btnProjects').onclick=openProjects;
 document.getElementById('btnAdmin').onclick=openAdmin;
-document.getElementById('navBack').onclick=()=>{if(STEP>0){STEP--;renderRail();renderStep()}};
-document.getElementById('navNext').onclick=()=>{if(STEP<STEPS.length-1){STEP++;renderRail();renderStep()}};
+document.getElementById('navBack').onclick=()=>{if(STEP>0){STEP--;renderRail();renderStep(true)}};
+document.getElementById('navNext').onclick=()=>{if(STEP<STEPS.length-1){STEP++;renderRail();renderStep(true)}};
 document.getElementById('navSave').onclick=()=>persist(false);
 document.getElementById('pinGo').onclick=()=>{if(val('pinInput')===admin().pin){hideAll();ADM_TAB='general';renderAdmin();show('ovAdmin')}else toast('Wrong PIN')};
 document.getElementById('pinInput').onkeydown=e=>{if(e.key==='Enter')document.getElementById('pinGo').click()};
