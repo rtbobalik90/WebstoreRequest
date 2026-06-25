@@ -350,7 +350,7 @@ function persist(silent){
   if(!P)return;
   P.updatedAt=Date.now();
   const all=projects(); all[P.id]=P; Store.set('projects',all);
-  Store.set('currentId',P.id);
+  Store.set('currentId',P.id); Store.set('currentStep',STEP);
   if(!silent){flashSaved()}
 }
 function flashSaved(){const d=document.getElementById('saveDot');if(d){d.textContent='saved ✓';setTimeout(()=>d.textContent='saved',1400)}}
@@ -957,8 +957,23 @@ document.getElementById('pinInput').onkeydown=e=>{if(e.key==='Enter')document.ge
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=hideAll);
 document.querySelectorAll('.overlay').forEach(o=>o.onclick=e=>{if(e.target===o)hideAll()});
 
-/* boot */
-renderRecent();
+/* surface any runtime error on screen so it can be reported */
+window.addEventListener('error',e=>{try{toast('Error: '+(e.message||'unknown'))}catch(_){};});
+window.addEventListener('unhandledrejection',e=>{try{toast('Error: '+((e.reason&&e.reason.message)||e.reason||'promise'))}catch(_){};});
+
+/* boot — resume the last open request instead of dropping to the landing page */
+(function boot(){
+  renderRecent();
+  try{
+    const cid=Store.get('currentId');
+    const all=projects();
+    if(cid && all[cid]){
+      P=all[cid];
+      let s=Store.get('currentStep',0); STEP=(typeof s==='number'&&s>=0&&s<=4)?s:0;
+      enterApp();
+    }
+  }catch(e){console.error('resume failed',e);}
+})();
 </script>
 </body>
 </html>
