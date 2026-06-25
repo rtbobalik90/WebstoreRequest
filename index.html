@@ -900,7 +900,8 @@ function tableEditor(key,cols,rows,_){
 function wireTable(key,A){
   const pane=document.getElementById('admPane');
   pane.querySelectorAll('tr[data-row]').forEach(tr=>{const i=+tr.dataset.row;
-    tr.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;A[key][i][k]=(k==='cost'||k==='itemLimit'||k==='baseCost')?(+inp.value):inp.value});
+    tr.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;
+      A[key][i][k]=(k==='cost'||k==='itemLimit'||k==='baseCost')?(+inp.value):inp.value;saveAdmin(A);});
   });
   pane.querySelectorAll('[data-delrow]').forEach(b=>b.onclick=()=>{A[key].splice(+b.dataset.delrow,1);saveAdmin(A);renderAdmin()});
   document.getElementById('addRow').onclick=()=>{
@@ -955,7 +956,7 @@ document.getElementById('navSave').onclick=()=>persist(false);
 document.getElementById('pinGo').onclick=()=>{if(val('pinInput')===admin().pin){hideAll();ADM_TAB='general';renderAdmin();show('ovAdmin')}else toast('Wrong PIN')};
 document.getElementById('pinInput').onkeydown=e=>{if(e.key==='Enter')document.getElementById('pinGo').click()};
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=hideAll);
-document.querySelectorAll('.overlay').forEach(o=>o.onclick=e=>{if(e.target===o)hideAll()});
+document.querySelectorAll('.overlay').forEach(o=>o.onclick=e=>{if(e.target===o && o.id!=='ovAdmin')hideAll()});
 
 /* surface any runtime error on screen so it can be reported */
 window.addEventListener('error',e=>{try{toast('Error: '+(e.message||'unknown'))}catch(_){};});
