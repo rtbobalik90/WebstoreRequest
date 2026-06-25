@@ -195,6 +195,37 @@
     font-size:14px;font-weight:600;z-index:80;box-shadow:var(--sh);opacity:0;transition:.25s;pointer-events:none}
   .toast.show{opacity:1}
 
+  /* logos tab */
+  .logo-defs{display:flex;flex-direction:column;gap:12px}
+  .logo-def{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--r);padding:12px 40px 12px 12px;background:#FCFBF8;position:relative}
+  .ld-img{width:96px;height:96px;border:1.5px dashed var(--line);border-radius:9px;display:grid;place-items:center;cursor:pointer;background:#fff;flex:none;overflow:hidden;text-align:center}
+  .ld-img:hover{border-color:var(--accent)}
+  .ld-img img{max-width:100%;max-height:100%;object-fit:contain}
+  .ld-img .ph{color:var(--muted);font-size:11px;line-height:1.3}
+  .ld-fields{flex:1;min-width:0}
+  .ld-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .fld{display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px}
+  .fld.xs{min-width:60px;max-width:84px;flex:0 0 74px}
+  .fld label{font-size:11px;font-weight:700;color:var(--ink2)}
+  .fld input,.fld select{border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff;width:100%}
+  .fld input:focus,.fld select:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+  .logo-def>.xbtn{position:absolute;top:8px;right:8px;width:28px;height:28px}
+  /* item logo instances */
+  .tone-toggle{margin-left:auto;display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .tone-toggle button{border:none;background:#fff;padding:4px 10px;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer}
+  .tone-toggle button.on{background:var(--ink);color:#fff}
+  .logo-inst{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line2);border-radius:var(--r);padding:10px;margin-bottom:8px;background:#fff}
+  .prev{width:90px;height:90px;border-radius:9px;display:grid;place-items:center;flex:none;border:1px solid rgba(0,0,0,.12);overflow:hidden}
+  .prev img{max-width:78%;max-height:78%;object-fit:contain}
+  .prev .ph{font-size:10px;color:rgba(255,255,255,.9);text-shadow:0 1px 2px rgba(0,0,0,.55)}
+  .li-fields{flex:1;min-width:0}
+  .li-row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:8px}
+  .li-row .xbtn{height:38px;width:38px;flex:none}
+  .prod-img{width:120px;height:120px;border:1.5px dashed var(--line);border-radius:10px;display:grid;place-items:center;cursor:pointer;background:#FCFBF8;flex:none;overflow:hidden;text-align:center}
+  .prod-img:hover{border-color:var(--accent)}
+  .prod-img img{max-width:100%;max-height:100%;object-fit:contain}
+  .prod-img .ph{color:var(--muted);font-size:12px}
+
   @media(max-width:820px){
     .shell{grid-template-columns:1fr}
     .rail{border-right:none;border-bottom:1px solid var(--line);display:flex;overflow-x:auto;gap:6px;padding:10px}
@@ -302,6 +333,7 @@ const DEFAULT_ADMIN={
     {id:'a5',name:'Fundraising markup',desc:'Adds a configurable markup that routes to a fundraising goal.',cost:0}
   ],
   storeTypes:['Team / Organization','Corporate','Fundraiser','Event / One-time','School','Other'],
+  placements:['Left Chest','Right Chest','Full Front','Full Back','Left Sleeve','Right Sleeve','Pocket','Yoke','Hood','Cap Front','Cap Back'],
   cloud:{gistId:'',token:''}
 };
 function admin(){const a=Store.get('admin');return a?Object.assign({},DEFAULT_ADMIN,a):JSON.parse(JSON.stringify(DEFAULT_ADMIN))}
@@ -319,8 +351,9 @@ let P=null;          // current project
 let STEP=0;
 const STEPS=[
   {t:'Request',sub:'Store & contact'},
+  {t:'Logos',sub:'Artwork & defaults'},
   {t:'Items',sub:'Products & deco'},
-  {t:'Design',sub:'Logos & colors'},
+  {t:'Design',sub:'Store look'},
   {t:'Add-ons',sub:'Optional features'},
   {t:'Invoice',sub:'Setup cost & submit'}
 ];
@@ -333,6 +366,8 @@ function blankProject(){
              companyName:'', contactName:'', contactEmail:'', contactPhone:'',
              launchDate:'', notes:''},
     items:[],
+    logos:{},          // decoMethodId -> [logo defs]
+    defaultDeco:'emb',
     design:{header:null,footer:null,background:null,colors:[]},
     addons:{},   // id -> true
     invoice:{receipt:null, receiptName:''}
@@ -340,9 +375,13 @@ function blankProject(){
 }
 function newItem(){
   return {id:'I'+Math.random().toString(36).slice(2,8), url:'', sku:'', name:'', description:'',
+          imageUrl:'', imageData:null,
           pulledColors:[], colors:[], inventoried:false, csNumber:''};
 }
-// color object: {name, hex, logos:[{id,deco,coid}]}
+const lid=()=>'L'+Math.random().toString(36).slice(2,8);
+// color object: {name, hex, tone:'auto'|'light'|'dark', logos:[logoInstance]}
+// logoInstance: {id, deco, logoId, coid, placement, w, h, image}
+// project logo def: {id, image, coid, w, h, placement, colorway:{type:'light'|'dark'|'color', color}}
 
 /* ============================== PERSISTENCE ============================== */
 function projects(){return Store.get('projects',{})}
@@ -356,6 +395,44 @@ function persist(silent){
 function flashSaved(){const d=document.getElementById('saveDot');if(d){d.textContent='saved ✓';setTimeout(()=>d.textContent='saved',1400)}}
 function loadProject(id){const all=projects();if(all[id]){P=all[id];STEP=0;enterApp()}}
 function deleteProject(id){const all=projects();delete all[id];Store.set('projects',all);renderProjectList();renderRecent()}
+
+/* ============================== LOGO MODEL HELPERS ============================== */
+function migrate(p){
+  if(!p.logos)p.logos={};
+  if(!p.defaultDeco)p.defaultDeco=(admin().decoMethods[0]||{}).id||'emb';
+  (p.items||[]).forEach(it=>{
+    if(it.imageUrl===undefined)it.imageUrl='';
+    if(it.imageData===undefined)it.imageData=null;
+    (it.colors||[]).forEach(c=>{
+      if(c.tone===undefined)c.tone='auto';
+      c.logos=(c.logos||[]).map(l=>({id:l.id||lid(),deco:l.deco||p.defaultDeco,logoId:l.logoId||'',
+        coid:l.coid||'',placement:l.placement||'',w:l.w||'',h:l.h||'',image:l.image||null}));
+    });
+  });
+  return p;
+}
+function luminance(hex){hex=String(hex||'#888').replace('#','');if(hex.length===3)hex=hex.split('').map(x=>x+x).join('');
+  const r=parseInt(hex.slice(0,2),16)/255,g=parseInt(hex.slice(2,4),16)/255,b=parseInt(hex.slice(4,6),16)/255;
+  return 0.2126*r+0.7152*g+0.0722*b;}
+function colorIsDark(c){if(c.tone==='dark')return true;if(c.tone==='light')return false;return luminance(c.hex||guessHex(c.name))<0.5;}
+function cwLabel(cw){return cw.type==='color'?(cw.color||'Color'):(cw.type==='dark'?'Dark garments':'Light garments');}
+function logoLabel(def){return (def.coid||'logo')+' · '+cwLabel(def.colorway)+(def.placement?' · '+def.placement:'');}
+function resolveLogo(decoId,c){
+  const pool=(P.logos&&P.logos[decoId])||[]; if(!pool.length)return null;
+  let m=pool.find(l=>l.colorway.type==='color'&&l.colorway.color&&l.colorway.color.toLowerCase()===c.name.toLowerCase());
+  if(m)return m;
+  m=pool.find(l=>l.colorway.type===(colorIsDark(c)?'dark':'light'));
+  return m||pool[0];
+}
+function instanceFromDef(def,decoId){
+  if(!def)return {id:lid(),deco:decoId||P.defaultDeco||'',logoId:'',coid:'',placement:'',w:'',h:'',image:null};
+  return {id:lid(),deco:decoId,logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image};
+}
+function knockoutWhite(dataURL,cb,thresh=238){const img=new Image();img.onload=()=>{
+  const cv=document.createElement('canvas');cv.width=img.width;cv.height=img.height;const x=cv.getContext('2d');
+  x.drawImage(img,0,0);const d=x.getImageData(0,0,cv.width,cv.height),p=d.data;
+  for(let i=0;i<p.length;i+=4){if(p[i]>=thresh&&p[i+1]>=thresh&&p[i+2]>=thresh)p[i+3]=0;}
+  x.putImageData(d,0,0);cb(cv.toDataURL('image/png'));};img.onerror=()=>cb(dataURL);img.src=dataURL;}
 
 /* ============================== PRICING ============================== */
 function decoCost(decoId){const m=admin().decoMethods.find(d=>d.id===decoId);return m?(+m.cost||0):0}
@@ -382,6 +459,7 @@ const money=n=>'$'+(Math.round((+n||0)*100)/100).toFixed(2);
 
 /* ============================== RENDER SHELL ============================== */
 function enterApp(){
+  if(P)migrate(P);
   document.getElementById('landing').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   document.getElementById('footnav').classList.remove('hidden');
@@ -414,7 +492,7 @@ function renderRail(){
 }
 function renderStep(){
   const m=document.getElementById('main');
-  [renderRequest,renderItems,renderDesign,renderAddons,renderInvoice][STEP](m);
+  [renderRequest,renderLogos,renderItems,renderDesign,renderAddons,renderInvoice][STEP](m);
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function refresh(){renderRail();persist(true)}
@@ -423,20 +501,22 @@ function refresh(){renderRail();persist(true)}
 function stepDone(){
   const r=P.request;
   const d0=!!(r.packageId&&r.storeType&&r.storeName&&r.repName&&r.companyName&&r.contactName&&r.contactEmail);
+  const dLogos=Object.values(P.logos||{}).some(arr=>arr&&arr.length); // optional, just a checkmark
   const d1=P.items.length>0 && P.items.every(it=>it.name && it.colors.length>0 &&
             (!it.inventoried||it.csNumber) &&
             it.colors.every(c=>c.logos.length===0||c.logos.every(l=>l.deco)));
   const d2=!!(P.design.header&&P.design.footer&&P.design.background&&P.design.colors.length>0);
   const d3=true; // add-ons optional
   const d4=!!(P.invoice.receipt);
-  return [d0,d1,d2,d3,d4];
+  return [d0,dLogos,d1,d2,d3,d4];
 }
+function canSubmit(){const d=stepDone();return d[0]&&d[2]&&d[3]&&d[5];}
 
 /* ============================== STEP 1 — REQUEST ============================== */
 function renderRequest(m){
   const A=admin(), r=P.request;
   m.innerHTML=`
-  <div class="page-head"><div class="eyebrow">Step 1 of 5</div><h1>Store & contact</h1>
+  <div class="page-head"><div class="eyebrow">Step 1 of 6</div><h1>Store & contact</h1>
     <p>Pick the package, then tell us who this store is for. The package sets the item limit and free-color rules used in pricing.</p></div>
   <div class="card">
     <h3>Store type & package</h3><p class="hint">Choosing the package sets the item limit and pricing for the whole request.</p>
@@ -477,13 +557,80 @@ function renderRequest(m){
     document.getElementById('pkgNote').textContent=p?`Item limit ${p.itemLimit} · ${A.freeColorsPerItem} colors free per item · base ${money(p.baseCost)}`:'';}
 }
 
-/* ============================== STEP 2 — ITEMS ============================== */
+/* ============================== STEP 2 — LOGOS ============================== */
+function renderLogos(m){
+  const A=admin(), decos=A.decoMethods;
+  m.innerHTML=`
+  <div class="page-head"><div class="eyebrow">Step 2 of 6</div><h1>Project logos</h1>
+    <p>Set up this store's logos, grouped by decoration method. Tag each with a colorway and the matching version auto-fills when a rep picks a garment color.</p></div>
+  <datalist id="stdcolors">${['Black','White','Navy','Royal','Red','Maroon','Green','Forest','Kelly','Gold','Yellow','Orange','Purple','Pink','Gray','Charcoal','Silver','Cardinal','Carolina','Teal','Burgundy'].map(c=>`<option value="${c}">`).join('')}</datalist>
+  <div class="card"><div class="field" style="max-width:340px;margin:0">
+    <label>Default decoration method for items</label>
+    <select id="defDeco">${optList(decos.map(d=>[d.id,d.name]),P.defaultDeco)}</select>
+    <small>New garment colors auto-fill a logo from this method.</small></div></div>
+  ${decos.map(d=>decoSectionHTML(d)).join('')}`;
+  document.getElementById('defDeco').onchange=e=>{P.defaultDeco=e.target.value;refresh()};
+  m.querySelectorAll('[data-deco]').forEach(sec=>{
+    const decoId=sec.dataset.deco; P.logos[decoId]=P.logos[decoId]||[];
+    sec.querySelector('[data-act="addlogo"]').onclick=()=>{P.logos[decoId].push({id:lid(),image:null,coid:'',w:'',h:'',placement:'',colorway:{type:'light',color:''}});refresh();renderStep()};
+    sec.querySelectorAll('.logo-def').forEach(def=>{
+      const li=+def.dataset.li, lg=P.logos[decoId][li]; if(!lg)return;
+      def.querySelectorAll('[data-k]').forEach(inp=>{const k=inp.dataset.k;
+        inp.oninput=inp.onchange=()=>{
+          if(k==='cwtype'){lg.colorway.type=inp.value;def.querySelector('[data-cwcolor]').classList.toggle('hidden',inp.value!=='color');}
+          else if(k==='cwcolor'){lg.colorway.color=inp.value;}
+          else lg[k]=inp.value;
+          refresh();};
+      });
+      def.querySelector('[data-act="img"]').onclick=()=>{const f=document.createElement('input');f.type='file';f.accept='image/*';
+        f.onchange=e=>{const file=e.target.files[0];if(!file)return;downscale(file,d=>{lg.image=d;refresh();renderStep();},700,.92)};f.click();};
+      def.querySelector('[data-act="dellogo"]').onclick=()=>{P.logos[decoId].splice(li,1);refresh();renderStep()};
+      const kn=def.querySelector('[data-act="knock"]');if(kn)kn.onclick=()=>knockoutWhite(lg.image,d=>{lg.image=d;refresh();renderStep()});
+    });
+  });
+}
+function decoSectionHTML(d){
+  const list=(P.logos[d.id]||[]);
+  return `<div class="card" data-deco="${d.id}">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+      <h3 style="margin:0">${esc(d.name)}</h3>
+      <span class="muted" style="font-size:12px">${list.length} logo${list.length!==1?'s':''}</span>
+      <button class="btn sm iconplus" data-act="addlogo" style="margin-left:auto">+ Add logo</button></div>
+    <div class="logo-defs">${list.length?list.map((lg,li)=>logoDefHTML(lg,li)).join(''):'<p class="muted" style="font-size:13px;margin:6px 0 0">No logos yet for this method.</p>'}</div>
+  </div>`;
+}
+function logoDefHTML(lg,li){
+  const A=admin();
+  return `<div class="logo-def" data-li="${li}">
+    <div class="ld-img" data-act="img">${lg.image?`<img src="${lg.image}">`:'<span class="ph">📤 Upload<br>logo</span>'}</div>
+    <div class="ld-fields">
+      <div class="ld-row">
+        <div class="fld"><label>COID</label><input data-k="coid" value="${esc(lg.coid)}" placeholder="COID"></div>
+        <div class="fld xs"><label>W in</label><input data-k="w" type="number" step="0.25" value="${esc(lg.w)}"></div>
+        <div class="fld xs"><label>H in</label><input data-k="h" type="number" step="0.25" value="${esc(lg.h)}"></div>
+      </div>
+      <div class="ld-row">
+        <div class="fld"><label>Placement</label><select data-k="placement">${optList(A.placements.map(p=>[p,p]),lg.placement,'Placement…')}</select></div>
+        <div class="fld"><label>Colorway</label><select data-k="cwtype">
+          <option value="light" ${lg.colorway.type==='light'?'selected':''}>Light garments</option>
+          <option value="dark" ${lg.colorway.type==='dark'?'selected':''}>Dark garments</option>
+          <option value="color" ${lg.colorway.type==='color'?'selected':''}>Specific color</option></select></div>
+        <div class="fld ${lg.colorway.type==='color'?'':'hidden'}" data-cwcolor><label>Color</label>
+          <input data-k="cwcolor" list="stdcolors" value="${esc(lg.colorway.color||'')}" placeholder="Black"></div>
+      </div>
+      ${lg.image?'<button class="btn sm" data-act="knock" style="margin-top:2px">Knock out white background</button>':''}
+    </div>
+    <button class="xbtn" data-act="dellogo" title="Remove logo">×</button>
+  </div>`;
+}
+
+/* ============================== STEP 3 — ITEMS ============================== */
 function renderItems(m){
   const A=admin(), pkg=packageOf();
   const over = pkg ? Math.max(0,P.items.length-(+pkg.itemLimit||0)) : 0;
   m.innerHTML=`
-  <div class="page-head"><div class="eyebrow">Step 2 of 5</div><h1>Items & decoration</h1>
-    <p>Paste a Triple Crown product link to pull the details, pick the colors, then add the logos and decoration for each color. ${pkg?`This package allows <b>${pkg.itemLimit}</b> items; ${A.freeColorsPerItem} colors per item are free.`:'<b>Pick a package on step 1</b> to enable limits and pricing.'}</p></div>
+  <div class="page-head"><div class="eyebrow">Step 3 of 6</div><h1>Items & decoration</h1>
+    <p>Paste a Triple Crown product link to pull details and image, pick the colors, then confirm the logos that auto-fill for each color. ${pkg?`This package allows <b>${pkg.itemLimit}</b> items; ${A.freeColorsPerItem} colors per item are free.`:'<b>Pick a package on step 1</b> to enable limits and pricing.'}</p></div>
   ${over>0?`<div class="alert warn">You're <b>${over}</b> item${over>1?'s':''} over the package limit. Each extra item adds ${money(A.extraItemFee)} (${money(over*A.extraItemFee)} so far).</div>`:''}
   <div id="itemList"></div>
   <button class="btn gold iconplus" id="addItem">+ Add new item</button>`;
@@ -508,10 +655,13 @@ function itemCardHTML(it,i){
         <button class="btn primary" data-act="pull">Pull details</button>
       </div>
       <div data-pullmsg></div>
-      <div class="grid3">
-        <div class="field"><label>SKU</label><input data-f="sku" value="${esc(it.sku)}"></div>
-        <div class="field"><label>Item name</label><input data-f="name" value="${esc(it.name)}"></div>
-        <div class="field"><label>Description</label><input data-f="description" value="${esc(it.description)}"></div>
+      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        <div class="prod-img" data-act="prodimg">${(it.imageData||it.imageUrl)?`<img src="${esc(it.imageData||it.imageUrl)}">`:'<span class="ph">📷 Product image<br><small>pulled or click to upload</small></span>'}</div>
+        <div class="grid3" style="flex:1;min-width:260px">
+          <div class="field"><label>SKU</label><input data-f="sku" value="${esc(it.sku)}"></div>
+          <div class="field"><label>Item name</label><input data-f="name" value="${esc(it.name)}"></div>
+          <div class="field"><label>Description</label><input data-f="description" value="${esc(it.description)}"></div>
+        </div>
       </div>
 
       <label style="font-size:12.5px;font-weight:700;color:var(--ink2)">Colors — select what the store offers</label>
@@ -543,20 +693,39 @@ function colorChips(it){
   }).join('');
 }
 function colorBlockHTML(it,c){
+  const dark=colorIsDark(c);
   return `<div class="color-block" data-cb="${esc(c.name)}">
     <div class="cbh"><span class="sw" style="background:${c.hex||guessHex(c.name)}"></span><b>${esc(c.name)}</b>
-      <span class="muted" style="font-size:12px">— logos & decoration</span></div>
-    ${c.logos.map((l,li)=>logoRowHTML(l,li)).join('')}
+      <span class="tone-toggle" data-tone>
+        <button class="${c.tone==='auto'?'on':''}" data-set="auto">Auto (${dark?'dark':'light'})</button>
+        <button class="${c.tone==='light'?'on':''}" data-set="light">Light</button>
+        <button class="${c.tone==='dark'?'on':''}" data-set="dark">Dark</button></span>
+    </div>
+    ${c.logos.map((l,li)=>logoInstHTML(it,c,l,li)).join('')}
     <button class="btn sm iconplus" data-act="addlogo">+ Add logo</button>
   </div>`;
 }
-function logoRowHTML(l,li){
-  const A=admin();
-  return `<div class="logo-row" data-li="${li}">
-    <div class="lab">Logo ${li+1}</div>
-    <div><label>Deco method</label><select data-l="deco">${optList(A.decoMethods.map(d=>[d.id,d.name]),l.deco,'Method…')}</select></div>
-    <div><label>COID</label><input data-l="coid" value="${esc(l.coid)}" placeholder="COID"></div>
-    <button class="xbtn" data-act="dellogo" title="Remove logo">×</button>
+function logoInstHTML(it,c,l,li){
+  const A=admin(); const gh=c.hex||guessHex(c.name);
+  const pool=(P.logos&&P.logos[l.deco])||[];
+  return `<div class="logo-inst" data-li="${li}">
+    <div class="prev" style="background:${gh}">${l.image?`<img src="${esc(l.image)}">`:'<span class="ph">no art</span>'}</div>
+    <div class="li-fields">
+      <div class="li-row">
+        <div class="fld"><label>Deco method</label><select data-l="deco">${optList(A.decoMethods.map(d=>[d.id,d.name]),l.deco,'Method…')}</select></div>
+        <div class="fld"><label>Logo</label><select data-l="logoId">
+          <option value="">— custom —</option>
+          ${pool.map(def=>`<option value="${def.id}" ${l.logoId===def.id?'selected':''}>${esc(logoLabel(def))}</option>`).join('')}
+        </select></div>
+        <div class="fld"><label>COID</label><input data-l="coid" value="${esc(l.coid)}" placeholder="COID"></div>
+      </div>
+      <div class="li-row">
+        <div class="fld"><label>Placement</label><select data-l="placement">${optList(A.placements.map(p=>[p,p]),l.placement,'Placement…')}</select></div>
+        <div class="fld xs"><label>W in</label><input data-l="w" type="number" step="0.25" value="${esc(l.w)}"></div>
+        <div class="fld xs"><label>H in</label><input data-l="h" type="number" step="0.25" value="${esc(l.h)}"></div>
+        <button class="xbtn" data-act="dellogo" title="Remove logo">×</button>
+      </div>
+    </div>
   </div>`;
 }
 function csAreaHTML(it){
@@ -574,6 +743,9 @@ function wireItem(it,i){
   });
   card.querySelector('[data-act="del"]').onclick=()=>{if(confirm('Remove this item?')){P.items.splice(i,1);refresh();renderStep()}};
   card.querySelector('[data-act="pull"]').onclick=()=>pullProduct(it,i);
+  const pim=card.querySelector('[data-act="prodimg"]');
+  if(pim)pim.onclick=()=>{const f=document.createElement('input');f.type='file';f.accept='image/*';
+    f.onchange=e=>{const file=e.target.files[0];if(!file)return;downscale(file,d=>{it.imageData=d;refresh();renderStep()})};f.click();};
   card.querySelector('[data-act="addcolor"]').onclick=()=>{
     const inp=card.querySelector('[data-newcolor]');const nm=inp.value.trim();if(!nm)return;
     if(!it.pulledColors.map(x=>x.toLowerCase()).includes(nm.toLowerCase()))it.pulledColors.push(nm);
@@ -583,10 +755,16 @@ function wireItem(it,i){
   // color blocks
   card.querySelectorAll('[data-cb]').forEach(cb=>{
     const cname=cb.dataset.cb; const c=it.colors.find(x=>x.name===cname); if(!c)return;
-    cb.querySelector('[data-act="addlogo"]').onclick=()=>{c.logos.push({id:'L'+Math.random().toString(36).slice(2,7),deco:'',coid:''});refresh();renderStep()};
-    cb.querySelectorAll('.logo-row').forEach(row=>{
-      const li=+row.dataset.li;
-      row.querySelectorAll('[data-l]').forEach(el=>el.oninput=()=>{c.logos[li][el.dataset.l]=el.value;refresh()});
+    cb.querySelectorAll('[data-tone] button').forEach(b=>b.onclick=()=>{c.tone=b.dataset.set;refresh();renderStep()});
+    cb.querySelector('[data-act="addlogo"]').onclick=()=>{const def=resolveLogo(P.defaultDeco,c);c.logos.push(instanceFromDef(def,P.defaultDeco));refresh();renderStep()};
+    cb.querySelectorAll('.logo-inst').forEach(row=>{
+      const li=+row.dataset.li, l=c.logos[li]; if(!l)return;
+      row.querySelectorAll('[data-l]').forEach(el=>{
+        el.oninput=el.onchange=()=>{const k=el.dataset.l;
+          if(k==='deco'){l.deco=el.value;const def=resolveLogo(el.value,c);if(def)Object.assign(l,{logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image});else l.logoId='';refresh();renderStep();return;}
+          if(k==='logoId'){const def=(P.logos[l.deco]||[]).find(x=>x.id===el.value);if(def)Object.assign(l,{logoId:def.id,coid:def.coid,placement:def.placement,w:def.w,h:def.h,image:def.image});else l.logoId='';refresh();renderStep();return;}
+          l[k]=el.value;refresh();};
+      });
       row.querySelector('[data-act="dellogo"]').onclick=()=>{c.logos.splice(li,1);refresh();renderStep()};
     });
   });
@@ -596,8 +774,13 @@ function wireItem(it,i){
 }
 function toggleColor(it,name,force){
   const idx=it.colors.findIndex(c=>c.name.toLowerCase()===name.toLowerCase());
-  if(idx>=0 && !force){it.colors.splice(idx,1);}
-  else if(idx<0){it.colors.push({name,hex:guessHex(name),logos:[]});}
+  if(idx>=0 && !force){it.colors.splice(idx,1);return;}
+  if(idx<0){
+    const c={name,hex:guessHex(name),tone:'auto',logos:[]};
+    const def=resolveLogo(P.defaultDeco,c);
+    c.logos.push(instanceFromDef(def,P.defaultDeco));
+    it.colors.push(c);
+  }
 }
 
 /* product pull via Claude API (web search) with manual fallback */
@@ -619,7 +802,8 @@ async function pullProduct(it,i){
           `Look up this Triple Crown Products product page and extract its details: ${it.url}\n`+
           `Return ONLY a raw JSON object, no markdown, no commentary, with keys: `+
           `"sku" (string), "name" (string), "description" (string, max 200 chars), `+
-          `"colors" (array of color name strings offered for this product). `+
+          `"colors" (array of color name strings offered for this product), `+
+          `"imageUrl" (string, a direct URL to the product's main image if you can find one, else ""). `+
           `If you cannot find it, return {"error":"not found"}.`}]
       })
     });
@@ -635,6 +819,7 @@ async function pullProduct(it,i){
     if(json.sku)it.sku=json.sku;
     if(json.name)it.name=json.name;
     if(json.description)it.description=json.description;
+    if(json.imageUrl&&/^https?:\/\//i.test(json.imageUrl))it.imageUrl=json.imageUrl;
     if(Array.isArray(json.colors)&&json.colors.length){
       it.pulledColors=[...new Set(json.colors.map(c=>String(c).trim()).filter(Boolean))];
     }
@@ -651,7 +836,7 @@ function extractJSON(t){if(!t)return null;t=t.replace(/```json/gi,'').replace(/`
 function renderDesign(m){
   const d=P.design;
   m.innerHTML=`
-  <div class="page-head"><div class="eyebrow">Step 3 of 5</div><h1>Store design</h1>
+  <div class="page-head"><div class="eyebrow">Step 4 of 6</div><h1>Store design</h1>
     <p>Upload the artwork for the storefront and choose the store's colors. Images are stored with the request.</p></div>
   <div class="card"><h3>Artwork</h3><p class="hint">Header and footer logos plus a background image are required.</p>
     <div class="grid3">
@@ -697,7 +882,7 @@ function downscale(file,cb,max=1100,q=.82){
 function renderAddons(m){
   const A=admin();
   m.innerHTML=`
-  <div class="page-head"><div class="eyebrow">Step 4 of 5</div><h1>Add-on features</h1>
+  <div class="page-head"><div class="eyebrow">Step 5 of 6</div><h1>Add-on features</h1>
     <p>Optional features for the store. None are turned on by default. Pricing is set in admin — most show ${money(0)} today.</p></div>
   <div class="card"><h3>Available features</h3><p class="hint">Check the ones this store needs.</p>
   ${A.addons.map(a=>`<label class="addon"><input type="checkbox" data-addon="${a.id}" ${P.addons[a.id]?'checked':''}>
@@ -711,10 +896,10 @@ function renderAddons(m){
 /* ============================== STEP 5 — INVOICE ============================== */
 function renderInvoice(m){
   const A=admin(), t=storeTotals(), pkg=packageOf(), done=stepDone();
-  const labels=['Store & contact','Items & decoration','Store design','Add-ons','Receipt uploaded'];
-  const ready=done[0]&&done[1]&&done[2]&&done[4];
+  const checks=[['Store & contact',done[0]],['Items & decoration',done[2]],['Store design',done[3]],['Receipt uploaded',done[5]]];
+  const ready=canSubmit();
   m.innerHTML=`
-  <div class="page-head"><div class="eyebrow">Step 5 of 5</div><h1>Setup invoice</h1>
+  <div class="page-head"><div class="eyebrow">Step 6 of 6</div><h1>Setup invoice</h1>
     <p>Review the setup cost, upload the receipt, and submit. Submitting builds the specialist's spec sheet and opens a pre-filled email.</p></div>
   <div class="card"><h3>Cost summary</h3>
     <div class="breakdown" style="font-size:14px">
@@ -729,7 +914,7 @@ function renderInvoice(m){
     <div class="up" data-up="receipt" style="max-width:360px">${P.invoice.receipt?`<img src="${P.invoice.receipt}"><div class="ph">Click to replace</div>`:`<div class="ph">📤 Upload receipt<br><small>image</small></div>`}</div>
   </div>
   <div class="card"><h3>Ready to submit?</h3><p class="hint">Everything below must be complete before you can submit.</p>
-    ${labels.map((l,i)=>`<div class="check"><div class="dot ${done[i]?'ok':'no'}">${done[i]?'✓':'!'}</div>${l}</div>`).join('')}
+    ${checks.map(c=>`<div class="check"><div class="dot ${c[1]?'ok':'no'}">${c[1]?'✓':'!'}</div>${c[0]}</div>`).join('')}
     ${!A.specialistEmail?`<div class="alert warn" style="margin-top:12px">No specialist email set in admin — the spec sheet will still download, but the email won't pre-fill a recipient.</div>`:''}
     <div style="display:flex;gap:10px;margin-top:16px">
       <button class="btn gold" id="btnSubmit" ${ready?'':'disabled'}>Submit webstore request</button>
@@ -761,14 +946,16 @@ function buildExcel(submit){
   ];
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(req),'Request');
   // Items sheet (flattened by color/logo)
-  const rows=[['Item #','SKU','Item name','Description','Inventoried','CS #','Color','Logo #','Deco method','COID','Item total']];
+  const rows=[['Item #','SKU','Item name','Description','Inventoried','CS #','Color','Tone','Logo #','Deco method','COID','Placement','Size (in)','Item total']];
   P.items.forEach((it,i)=>{
     const bd=itemBreakdown(it);
-    if(it.colors.length===0){rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,'','','','',money(bd.total)]);}
+    if(it.colors.length===0){rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,'','','','','','','',money(bd.total)]);}
     it.colors.forEach(c=>{
-      if(c.logos.length===0){rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,c.name,'(none)','','',money(bd.total)]);}
+      const tone=colorIsDark(c)?'Dark':'Light';
+      if(c.logos.length===0){rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,c.name,tone,'(none)','','','','',money(bd.total)]);}
       c.logos.forEach((l,li)=>{const dn=(A.decoMethods.find(d=>d.id===l.deco)||{}).name||'';
-        rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,c.name,li+1,dn,l.coid,money(bd.total)]);});
+        const size=(l.w||l.h)?`${l.w||'?'} x ${l.h||'?'}`:'';
+        rows.push([i+1,it.sku,it.name,it.description,it.inventoried?'YES':'',it.csNumber,c.name,tone,li+1,dn,l.coid,l.placement,size,money(bd.total)]);});
     });
   });
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Items');
@@ -970,7 +1157,7 @@ window.addEventListener('unhandledrejection',e=>{try{toast('Error: '+((e.reason&
     const all=projects();
     if(cid && all[cid]){
       P=all[cid];
-      let s=Store.get('currentStep',0); STEP=(typeof s==='number'&&s>=0&&s<=4)?s:0;
+      let s=Store.get('currentStep',0); STEP=(typeof s==='number'&&s>=0&&s<=5)?s:0;
       enterApp();
     }
   }catch(e){console.error('resume failed',e);}
